@@ -2,7 +2,6 @@
   "buildCommand": "pnpm turbo run build --filter=web",
   "outputDirectory": "apps/web/.next",
   "installCommand": "pnpm install",
-  "framework": "nextjs",
   "regions": ["bom1"],
   "functions": {
     "app/api/production/**": { "maxDuration": 300 },
