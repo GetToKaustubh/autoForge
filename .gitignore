@@ -8,6 +8,7 @@ dist
 .turbo
 coverage
 out
+*.tsbuildinfo
 
 # Environment
 .env
