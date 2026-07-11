@@ -16,6 +16,9 @@
     "db:generate": "turbo run db:generate --filter=web",
     "db:studio": "turbo run db:studio --filter=web"
   },
+  "dependencies": {
+    "next": "15.3.3"
+  },
   "devDependencies": {
     "turbo": "^2.3.3",
     "prettier": "^3.4.2",
