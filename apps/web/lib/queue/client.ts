@@ -25,6 +25,9 @@ export const TASK_IDS = {
   SEO_OPTIMIZATION: 'seo-optimization',
   YOUTUBE_UPLOAD: 'youtube-upload',
 
+  // Workflows
+  WORKFLOW_EXECUTION: 'workflow-execution',
+
   // Analytics
   ANALYTICS_SYNC: 'analytics-sync',
 
