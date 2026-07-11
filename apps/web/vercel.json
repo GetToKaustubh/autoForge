@@ -1,5 +1,8 @@
 {
   "regions": ["bom1"],
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm turbo run build --filter=web",
+  "outputDirectory": ".next",
   "functions": {
     "app/api/production/**": { "maxDuration": 300 },
     "app/api/publishing/**": { "maxDuration": 300 },
