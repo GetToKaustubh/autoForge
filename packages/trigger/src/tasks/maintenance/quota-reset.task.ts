@@ -1,4 +1,4 @@
-import { schedules, logger } from '@trigger.dev/sdk/v3'
+import { schedules, logger } from '@trigger.dev/sdk'
 
 // Runs daily at 00:05 Pacific Time (08:05 UTC)
 // YouTube quota resets at midnight Pacific Time

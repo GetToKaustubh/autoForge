@@ -7,18 +7,18 @@
     "deploy": "npx trigger.dev@latest deploy"
   },
   "dependencies": {
-    "@trigger.dev/sdk": "^3.3.17",
-    "drizzle-orm": "^0.44.1",
-    "postgres": "^3.4.5",
-    "openai": "^4.87.4",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@trigger.dev/sdk": "^4.5.3",
     "cloudinary": "^2.6.1",
-    "zod": "^3.25.36",
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.44.1",
+    "openai": "^4.87.4",
+    "postgres": "^3.4.5",
+    "zod": "^3.25.36"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
     "@types/node": "^22.10.2",
-    "dotenv": "^16.5.0"
+    "dotenv": "^16.5.0",
+    "typescript": "^5.8.3"
   }
 }

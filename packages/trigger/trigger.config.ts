@@ -1,10 +1,10 @@
 import { defineConfig } from '@trigger.dev/sdk/v3'
 
 export default defineConfig({
-  project: process.env.TRIGGER_PROJECT_ID ?? 'tubeforge',
+  project: process.env.TRIGGER_PROJECT_ID ?? 'proj_nooctetwymiwoztvqyrj',
   runtime: 'node',
-  dirs: ['./tasks'],
-  maxDuration: 3600, // global default; individual tasks override as needed
+  dirs: ['./src/tasks'],
+  maxDuration: 3600,
   retries: {
     enabledInDev: false,
     default: {
@@ -15,5 +15,5 @@ export default defineConfig({
       randomize: true,
     },
   },
-  machine: 'medium-1x', // 1 vCPU, 2GB RAM
+  machine: 'medium-1x',
 })

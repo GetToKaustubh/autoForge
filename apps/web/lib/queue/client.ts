@@ -1,4 +1,4 @@
-import { tasks } from '@trigger.dev/sdk/v3'
+import { tasks } from '@trigger.dev/sdk'
 
 // Re-export the tasks client for use in API routes
 // Each task is defined in packages/trigger/src/tasks/

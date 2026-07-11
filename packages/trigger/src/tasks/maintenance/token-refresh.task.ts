@@ -1,4 +1,4 @@
-import { task, logger } from '@trigger.dev/sdk/v3'
+import { task, logger } from '@trigger.dev/sdk'
 import { db } from '../../lib/db'
 import { youtubeChannels } from '../../lib/db/schema'
 import { eq, and, lt, isNull } from 'drizzle-orm'

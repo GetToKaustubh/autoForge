@@ -1,4 +1,4 @@
-import { task, logger } from '@trigger.dev/sdk/v3'
+import { task, logger } from '@trigger.dev/sdk'
 import OpenAI from 'openai'
 import { db } from '../../lib/db'
 import { videoIdeas, apiUsage } from '../../lib/db/schema'

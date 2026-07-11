@@ -1,4 +1,4 @@
-import { schedules, logger } from '@trigger.dev/sdk/v3'
+import { schedules, logger } from '@trigger.dev/sdk'
 import { subDays, format } from 'date-fns'
 
 // Syncs analytics for all active channels daily at 06:00 UTC

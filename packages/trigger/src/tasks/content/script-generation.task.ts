@@ -1,4 +1,4 @@
-import { task, logger } from '@trigger.dev/sdk/v3'
+import { task, logger } from '@trigger.dev/sdk'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 
