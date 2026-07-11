@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { organizations, youtubeChannels } from '@/lib/db/schema'
-import { eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { Plus, Youtube } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ export default async function ChannelsPage() {
     ? await db
         .select()
         .from(youtubeChannels)
-        .where(eq(youtubeChannels.organizationId, org.id) && isNull(youtubeChannels.deletedAt))
+        .where(and(eq(youtubeChannels.organizationId, org.id), isNull(youtubeChannels.deletedAt)))
         .orderBy(youtubeChannels.isPrimary, youtubeChannels.createdAt)
     : []
 

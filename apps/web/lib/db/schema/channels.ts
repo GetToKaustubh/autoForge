@@ -7,6 +7,7 @@ import {
   boolean,
   timestamp,
   pgEnum,
+  unique,
 } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 import { organizations } from './organizations'
@@ -59,7 +60,9 @@ export const youtubeChannels = pgTable('youtube_channels', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (t) => [
+  unique('youtube_channels_org_channel_unique').on(t.organizationId, t.ytChannelId),
+])
 
 export const youtubeChannelsRelations = relations(youtubeChannels, ({ one }) => ({
   organization: one(organizations, {

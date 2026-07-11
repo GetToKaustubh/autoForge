@@ -42,6 +42,14 @@ export const pipelineStageEnum = pgEnum('pipeline_stage', [
 
 export const ytVisibilityEnum = pgEnum('yt_visibility', ['public', 'private', 'unlisted'])
 
+export const uploadStatusEnum = pgEnum('upload_status', [
+  'scheduled',
+  'uploading',
+  'uploaded',
+  'failed',
+  'cancelled',
+])
+
 // --- Voice Generations ---
 export const voiceGenerations = pgTable('voice_generations', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -157,15 +165,7 @@ export const scheduledUploads = pgTable('scheduled_uploads', {
     .references(() => videos.id),
   scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
   timezone: text('timezone').default('UTC').notNull(),
-  status: pgEnum('upload_status', [
-    'scheduled',
-    'uploading',
-    'uploaded',
-    'failed',
-    'cancelled',
-  ])('status')
-    .default('scheduled')
-    .notNull(),
+  status: uploadStatusEnum('status').default('scheduled').notNull(),
   triggerJobId: text('trigger_job_id'),
   attemptCount: integer('attempt_count').default(0).notNull(),
   lastError: text('last_error'),

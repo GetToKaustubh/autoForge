@@ -6,8 +6,10 @@ const isPublicRoute = createRouteMatcher([
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
-  '/api/webhooks/(.*)',   // Clerk, Trigger.dev, YouTube webhooks bypass auth
+  '/select-org(.*)',
+  '/api/webhooks/(.*)',
   '/api/health',
+  '/api/auth/youtube/callback', // Google redirects here — no Clerk org context in request
 ])
 
 const clerkHandler = clerkMiddleware(async (auth, req: NextRequest) => {
@@ -24,8 +26,13 @@ const clerkHandler = clerkMiddleware(async (auth, req: NextRequest) => {
 })
 
 export default function middleware(req: NextRequest, event: NextFetchEvent) {
-  // Pass through when Clerk is not configured (initial deploy without env vars).
-  // Add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY in Vercel to enable auth.
+  // Clerk's "Membership required" setting intercepts this route at the edge
+  // before our handler runs — even when marked as public. The callback no longer
+  // calls auth() so it's safe to bypass Clerk entirely here.
+  if (req.nextUrl.pathname === '/api/auth/youtube/callback') {
+    return NextResponse.next()
+  }
+
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
     return NextResponse.next()
   }

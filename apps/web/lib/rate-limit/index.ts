@@ -27,10 +27,10 @@ export const rateLimiters = {
     analytics: true,
   }),
 
-  // YouTube OAuth connect: 5 per hour per user
+  // YouTube OAuth connect: 20 per hour per user
   oauthConnect: new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(5, '1 h'),
+    limiter: Ratelimit.slidingWindow(20, '1 h'),
     prefix: 'rl:oauth',
     analytics: true,
   }),

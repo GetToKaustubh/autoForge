@@ -12,7 +12,7 @@ const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke'
 export const YOUTUBE_SCOPES = [
   'https://www.googleapis.com/auth/youtube',
   'https://www.googleapis.com/auth/youtube.readonly',
-  'https://www.googleapis.com/auth/youtube.analytics.readonly',
+  'https://www.googleapis.com/auth/yt-analytics.readonly',
   'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
   'https://www.googleapis.com/auth/userinfo.profile',
 ].join(' ')

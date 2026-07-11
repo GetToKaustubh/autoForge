@@ -27,7 +27,7 @@ export const organizations = pgTable('organizations', {
   slug: text('slug').unique().notNull(),
   plan: planEnum('plan').default('free').notNull(),
   planExpiresAt: timestamp('plan_expires_at', { withTimezone: true }),
-  maxChannels: integer('max_channels').default(1).notNull(),
+  maxChannels: integer('max_channels').default(10).notNull(),
   maxTeamMembers: integer('max_team_members').default(1).notNull(),
   monthlyVideoQuota: integer('monthly_video_quota').default(4).notNull(),
   stripeCustomerId: text('stripe_customer_id'),

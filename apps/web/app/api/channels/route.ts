@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { organizations, youtubeChannels } from '@/lib/db/schema'
-import { eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { rateLimiters, applyRateLimit } from '@/lib/rate-limit'
 import { logger } from '@/lib/utils/logger'
 
@@ -38,7 +38,7 @@ export async function GET() {
       createdAt: youtubeChannels.createdAt,
     })
     .from(youtubeChannels)
-    .where(eq(youtubeChannels.organizationId, org.id) && isNull(youtubeChannels.deletedAt))
+    .where(and(eq(youtubeChannels.organizationId, org.id), isNull(youtubeChannels.deletedAt)))
     .orderBy(youtubeChannels.isPrimary, youtubeChannels.createdAt)
 
   return NextResponse.json({ channels })
