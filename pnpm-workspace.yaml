@@ -1,11 +1,3 @@
 packages:
   - "apps/*"
   - "packages/*"
-
-neverBuiltDependencies:
-  - "@clerk/shared"
-  - "@sentry/cli"
-  - esbuild
-  - protobufjs
-  - sharp
-  - unrs-resolver
