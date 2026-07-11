@@ -1,6 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import type { NextRequest, NextFetchEvent } from 'next/server'
 
 const isPublicRoute = createRouteMatcher([
   '/',
@@ -10,7 +10,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/health',
 ])
 
-export default clerkMiddleware(async (auth, req: NextRequest) => {
+const clerkHandler = clerkMiddleware(async (auth, req: NextRequest) => {
   if (!isPublicRoute(req)) {
     const { userId, orgId } = await auth.protect()
 
@@ -22,6 +22,15 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     return NextResponse.next({ request: { headers } })
   }
 })
+
+export default function middleware(req: NextRequest, event: NextFetchEvent) {
+  // Pass through when Clerk is not configured (initial deploy without env vars).
+  // Add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY in Vercel to enable auth.
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
+    return NextResponse.next()
+  }
+  return clerkHandler(req, event)
+}
 
 export const config = {
   matcher: [
