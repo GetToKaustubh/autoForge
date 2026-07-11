@@ -8,6 +8,7 @@ import { getOrgMember, canAdmin } from '@/lib/auth/get-member'
 import { applyRateLimit, rateLimiters } from '@/lib/rate-limit'
 import { Resend } from 'resend'
 import { randomBytes } from 'crypto'
+import { enforceTeamMemberLimit } from '@/lib/utils/plan-enforcement'
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -32,6 +33,9 @@ export async function POST(req: NextRequest) {
   if (!canAdmin(member.role)) {
     return NextResponse.json({ error: 'Only admins can invite team members' }, { status: 403 })
   }
+
+  const limitErr = await enforceTeamMemberLimit(member.orgDbId)
+  if (limitErr) return limitErr
 
   const { email, role } = parsed.data
 
