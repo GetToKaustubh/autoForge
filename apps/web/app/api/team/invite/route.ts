@@ -9,8 +9,6 @@ import { applyRateLimit, rateLimiters } from '@/lib/rate-limit'
 import { Resend } from 'resend'
 import { randomBytes } from 'crypto'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 const inviteSchema = z.object({
   email: z.string().email(),
   role: z.enum(['admin', 'editor', 'viewer']),
@@ -84,6 +82,7 @@ export async function POST(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const inviteUrl = `${appUrl}/team/accept-invite?token=${token}`
 
+  const resend = new Resend(process.env.RESEND_API_KEY)
   await resend.emails.send({
     from: process.env.EMAIL_FROM ?? 'noreply@tubeforge.app',
     to: email,
