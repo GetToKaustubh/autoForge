@@ -47,7 +47,6 @@ export const navItems: NavItem[] = [
       { title: 'Voice', href: '/production/voice', icon: 'Mic2' },
       { title: 'Thumbnails', href: '/production/thumbnails', icon: 'Image' },
       { title: 'Videos', href: '/production/videos', icon: 'Video' },
-      { title: 'Pipeline', href: '/production/pipeline', icon: 'Workflow' },
     ],
   },
   {
@@ -55,7 +54,7 @@ export const navItems: NavItem[] = [
     href: '/publishing',
     icon: 'Upload',
     children: [
-      { title: 'Schedule', href: '/publishing/schedule', icon: 'Clock' },
+      { title: 'Upload', href: '/publishing/upload', icon: 'UploadCloud' },
       { title: 'SEO', href: '/publishing/seo', icon: 'BarChart2' },
       { title: 'History', href: '/publishing/history', icon: 'History' },
     ],
