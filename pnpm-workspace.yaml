@@ -2,12 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
 
-onlyBuiltDependencies:
-  - "@clerk/shared"
-  - "esbuild"
-  - "protobufjs"
-  - "sharp"
-
 neverBuiltDependencies:
+  - "@clerk/shared"
   - "@sentry/cli"
-  - "unrs-resolver"
+  - esbuild
+  - protobufjs
+  - sharp
+  - unrs-resolver
