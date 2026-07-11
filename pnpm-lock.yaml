@@ -3,6 +3,13 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  neverBuiltDependencies:
+    - '@clerk/shared'
+    - '@sentry/cli'
+    - esbuild
+    - protobufjs
+    - sharp
+    - unrs-resolver
 
 importers:
 
