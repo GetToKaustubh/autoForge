@@ -5,11 +5,11 @@
   "framework": "nextjs",
   "regions": ["bom1"],
   "functions": {
-    "apps/web/app/api/production/**": { "maxDuration": 300 },
-    "apps/web/app/api/publishing/**": { "maxDuration": 300 },
-    "apps/web/app/api/research/**":   { "maxDuration": 60  },
-    "apps/web/app/api/content/**":    { "maxDuration": 60  },
-    "apps/web/app/api/**":            { "maxDuration": 30  }
+    "app/api/production/**": { "maxDuration": 300 },
+    "app/api/publishing/**": { "maxDuration": 300 },
+    "app/api/research/**":   { "maxDuration": 60  },
+    "app/api/content/**":    { "maxDuration": 60  },
+    "app/api/**":            { "maxDuration": 30  }
   },
   "headers": [
     {
