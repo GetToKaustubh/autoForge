@@ -1,5 +1,5 @@
 {
-  "installCommand": "cd ../.. && pnpm install",
+  "installCommand": "npm install --legacy-peer-deps",
   "regions": ["bom1"],
   "functions": {
     "app/api/production/**": { "maxDuration": 300 },

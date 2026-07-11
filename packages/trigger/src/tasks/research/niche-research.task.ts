@@ -1,10 +1,10 @@
 import { task, logger } from '@trigger.dev/sdk'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateJSON } from '../../lib/gemini'
 import { db } from '../../lib/db'
 import { nicheResearch, apiUsage } from '../../lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-const SYSTEM_PROMPT = `You are an expert YouTube niche analyst with deep knowledge of content monetization, audience growth, and market saturation. Analyze niches scientifically and provide data-driven insights.`
+const SYSTEM_PROMPT = `You are an expert YouTube niche analyst with deep knowledge of content monetization, audience growth, and market saturation. Analyze niches scientifically and provide data-driven insights. Respond with valid JSON only.`
 
 export const nicheResearchTask = task({
   id: 'niche-research',
@@ -22,8 +22,6 @@ export const nicheResearchTask = task({
       .update(nicheResearch)
       .set({ status: 'running' })
       .where(eq(nicheResearch.id, researchId))
-
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
     const prompt = `Research YouTube niches related to: "${query}"
 
@@ -50,41 +48,29 @@ Return a JSON object with this exact structure:
   "reasoning": "string"
 }
 
-Return 5-8 niches. Score is 0-100.`
+Return 5-8 niches. score is 0-100.`
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 4096,
-      temperature: 0.3,
-    })
-
-    const inputTokens = response.usage?.input_tokens ?? 0
-    const outputTokens = response.usage?.output_tokens ?? 0
-    const costUsd = (inputTokens / 1_000_000) * 3.0 + (outputTokens / 1_000_000) * 15.0
-
-    const content = response.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join('')
-
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON found in Anthropic response')
-    const niches = JSON.parse(jsonMatch[0])
+    const result = await generateJSON<{ niches: unknown[] }>(prompt, SYSTEM_PROMPT, { temperature: 0.3 })
 
     await db
       .update(nicheResearch)
-      .set({ niches, modelUsed: 'claude-sonnet-4-6', tokensUsed: inputTokens + outputTokens, status: 'completed' })
+      .set({
+        niches: result.data,
+        modelUsed: 'gemini-2.0-flash',
+        tokensUsed: result.inputTokens + result.outputTokens,
+        status: 'completed',
+      })
       .where(eq(nicheResearch.id, researchId))
 
     await db.insert(apiUsage).values({
-      organizationId, userId, service: 'anthropic',
-      unitsUsed: String(inputTokens + outputTokens), unitType: 'tokens',
-      costUsd: costUsd.toFixed(6), resourceType: 'niche_research', resourceId: researchId,
+      organizationId, userId, service: 'openai',
+      unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
+      costUsd: result.costUsd.toFixed(6), resourceType: 'niche_research', resourceId: researchId,
+      metadata: { model: 'gemini-2.0-flash', inputTokens: result.inputTokens, outputTokens: result.outputTokens },
     })
 
-    logger.info(`Niche research ${researchId} completed: ${niches.niches?.length ?? 0} niches found`)
-    return { researchId, nichesFound: niches.niches?.length ?? 0 }
+    const nichesArr = Array.isArray(result.data?.niches) ? result.data.niches : []
+    logger.info(`Niche research ${researchId} completed: ${nichesArr.length} niches found`)
+    return { researchId, nichesFound: nichesArr.length }
   },
 })

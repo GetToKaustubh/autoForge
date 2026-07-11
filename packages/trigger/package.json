@@ -7,12 +7,11 @@
     "deploy": "npx trigger.dev@latest deploy"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@trigger.dev/sdk": "^4.5.3",
+    "@google/generative-ai": "^0.24.1",
+    "@trigger.dev/sdk": "4.5.3",
     "cloudinary": "^2.6.1",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.44.1",
-    "openai": "^4.87.4",
     "postgres": "^3.4.5",
     "zod": "^3.25.36"
   },

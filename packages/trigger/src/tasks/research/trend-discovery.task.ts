@@ -1,5 +1,5 @@
 import { task, logger } from '@trigger.dev/sdk'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateJSON } from '../../lib/gemini'
 import { db } from '../../lib/db'
 import { trends, apiUsage } from '../../lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -16,8 +16,6 @@ export const trendDiscoveryTask = task({
     userId: string
   }) => {
     const { trendId, topic, niche, organizationId, userId } = payload
-
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
     const prompt = `Discover current YouTube trends for topic: "${topic}"${niche ? ` in the "${niche}" niche` : ''}.
 
@@ -37,42 +35,30 @@ Return JSON:
   "expiresAt": "ISO8601 date string"
 }`
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 3000,
-      temperature: 0.4,
-    })
+    const result = await generateJSON<{ trends: unknown[]; expiresAt?: string }>(
+      prompt,
+      'You are a YouTube trend analyst. Respond with valid JSON only.',
+      { temperature: 0.4, maxOutputTokens: 3000 },
+    )
 
-    const inputTokens = response.usage?.input_tokens ?? 0
-    const outputTokens = response.usage?.output_tokens ?? 0
-    const costUsd = (inputTokens / 1_000_000) * 3.0 + (outputTokens / 1_000_000) * 15.0
-
-    const content = response.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join('')
-
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON in trend discovery response')
-    const trendData = JSON.parse(jsonMatch[0])
-
-    const expiresAt = trendData.expiresAt
-      ? new Date(trendData.expiresAt)
+    const expiresAt = result.data.expiresAt
+      ? new Date(result.data.expiresAt)
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
     await db
       .update(trends)
-      .set({ trendData, expiresAt })
+      .set({ trendData: result.data, expiresAt })
       .where(eq(trends.id, trendId))
 
     await db.insert(apiUsage).values({
       organizationId, userId, service: 'anthropic',
-      unitsUsed: String(inputTokens + outputTokens), unitType: 'tokens',
-      costUsd: costUsd.toFixed(6), resourceType: 'trend_discovery', resourceId: trendId,
+      unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
+      costUsd: result.costUsd.toFixed(6), resourceType: 'trend_discovery', resourceId: trendId,
+      metadata: { model: 'gemini-2.0-flash' },
     })
 
-    logger.info(`Trend discovery ${trendId} completed: ${trendData.trends?.length ?? 0} trends`)
-    return { trendId, trendsFound: trendData.trends?.length ?? 0 }
+    const trendsArr = Array.isArray(result.data?.trends) ? result.data.trends : []
+    logger.info(`Trend discovery ${trendId} completed: ${trendsArr.length} trends`)
+    return { trendId, trendsFound: trendsArr.length }
   },
 })

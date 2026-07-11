@@ -1,5 +1,5 @@
 import { task, logger } from '@trigger.dev/sdk'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateJSON } from '../../lib/gemini'
 import { z } from 'zod'
 
 const scriptPayloadSchema = z.object({
@@ -36,8 +36,6 @@ export const scriptGenerationTask = task({
 
     if (!idea) throw new Error(`Idea ${payload.ideaId} not found`)
 
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-
     const systemPrompt = `You are an expert YouTube script writer. Write engaging, educational scripts optimized for viewer retention.
 Your scripts must:
 - Open with a powerful hook in the first 15 seconds
@@ -67,57 +65,41 @@ Format: ${idea.format ?? 'educational'}
 
 Make the script ready to be read aloud by a voice-over artist.`
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    })
-
-    const content = response.content[0]
-    if (content?.type !== 'text') throw new Error('Unexpected response format from Anthropic')
-
-    const parsed = JSON.parse(content.text) as { sections: Array<{
+    const result = await generateJSON<{ sections: Array<{
       type: string; content: string; duration_sec: number; notes: string
-    }> }
+    }> }>(userPrompt, systemPrompt)
 
-    const fullText = parsed.sections.map((s) => s.content).join('\n\n')
+    const fullText = result.data.sections.map((s) => s.content).join('\n\n')
     const wordCount = fullText.split(/\s+/).length
-    const estimatedDuration = Math.round(wordCount / 2.5) // ~150 words/min
+    const estimatedDuration = Math.round(wordCount / 2.5)
 
-    const tokensIn = response.usage.input_tokens
-    const tokensOut = response.usage.output_tokens
-    const costUsd = (tokensIn * 0.000003 + tokensOut * 0.000015).toFixed(6)
-
-    // Update script record
     await db
       .update(scripts)
       .set({
-        sections: parsed.sections,
+        sections: result.data.sections,
         fullText,
         wordCount,
         estimatedDurationSec: estimatedDuration,
-        modelUsed: 'claude-sonnet-4-6',
-        tokensUsed: tokensIn + tokensOut,
+        modelUsed: 'gemini-2.0-flash',
+        tokensUsed: result.inputTokens + result.outputTokens,
         status: 'review',
         updatedAt: new Date(),
       })
       .where(eq(scripts.id, payload.scriptId))
 
-    // Record API usage
     await db.insert(apiUsage).values({
       organizationId: payload.organizationId,
       service: 'anthropic',
-      endpoint: 'messages.create',
-      unitsUsed: (tokensIn + tokensOut).toString(),
+      endpoint: 'script-generation',
+      unitsUsed: String(result.inputTokens + result.outputTokens),
       unitType: 'tokens',
-      costUsd,
+      costUsd: result.costUsd.toFixed(6),
       resourceType: 'script',
       resourceId: payload.scriptId,
-      metadata: { model: 'claude-sonnet-4-6', inputTokens: tokensIn, outputTokens: tokensOut },
+      metadata: { model: 'gemini-2.0-flash', inputTokens: result.inputTokens, outputTokens: result.outputTokens },
     })
 
     logger.info(`Script generation ${payload.scriptId} completed: ${wordCount} words`)
-    return { scriptId: payload.scriptId, wordCount, sections: parsed.sections.length }
+    return { scriptId: payload.scriptId, wordCount, sections: result.data.sections.length }
   },
 })

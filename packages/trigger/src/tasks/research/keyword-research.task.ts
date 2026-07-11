@@ -1,5 +1,5 @@
 import { task, logger } from '@trigger.dev/sdk'
-import OpenAI from 'openai'
+import { generateJSON } from '../../lib/gemini'
 import { db } from '../../lib/db'
 import { keywordResearch, apiUsage } from '../../lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -16,8 +16,6 @@ export const keywordResearchTask = task({
     userId: string
   }) => {
     const { researchId, seedKeyword, niche, organizationId, userId } = payload
-
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
     const prompt = `Research YouTube keywords for: "${seedKeyword}"${niche ? ` in the "${niche}" niche` : ''}.
 
@@ -44,34 +42,26 @@ Return a JSON object:
 
 Return 15-20 keywords. difficulty and opportunity are 0-100.`
 
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: 'You are an expert YouTube SEO strategist. Return only valid JSON.' },
-        { role: 'user', content: prompt },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 4096,
-      temperature: 0.3,
-    })
-
-    const inputTokens = response.usage?.prompt_tokens ?? 0
-    const outputTokens = response.usage?.completion_tokens ?? 0
-    const costUsd = (inputTokens / 1_000_000) * 2.5 + (outputTokens / 1_000_000) * 10.0
-    const results = JSON.parse(response.choices[0]?.message?.content ?? '{}')
+    const result = await generateJSON<{ keywords: unknown[] }>(
+      prompt,
+      'You are an expert YouTube SEO strategist. Respond with valid JSON only.',
+      { temperature: 0.3 },
+    )
 
     await db
       .update(keywordResearch)
-      .set({ results, source: 'ai' })
+      .set({ results: result.data, source: 'ai' })
       .where(eq(keywordResearch.id, researchId))
 
     await db.insert(apiUsage).values({
       organizationId, userId, service: 'openai',
-      unitsUsed: String(inputTokens + outputTokens), unitType: 'tokens',
-      costUsd: costUsd.toFixed(6), resourceType: 'keyword_research', resourceId: researchId,
+      unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
+      costUsd: result.costUsd.toFixed(6), resourceType: 'keyword_research', resourceId: researchId,
+      metadata: { model: 'gemini-2.0-flash' },
     })
 
-    logger.info(`Keyword research ${researchId} completed: ${results.keywords?.length ?? 0} keywords`)
-    return { researchId, keywordsFound: results.keywords?.length ?? 0 }
+    const keywords = Array.isArray(result.data?.keywords) ? result.data.keywords : []
+    logger.info(`Keyword research ${researchId} completed: ${keywords.length} keywords`)
+    return { researchId, keywordsFound: keywords.length }
   },
 })

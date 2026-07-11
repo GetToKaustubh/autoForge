@@ -1,16 +1,6 @@
-import OpenAI from 'openai'
+import { generateText as geminiGenerateText } from './gemini'
 
-let _client: OpenAI | null = null
-
-export function getOpenAIClient(): OpenAI {
-  if (!_client) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not set')
-    }
-    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  }
-  return _client
-}
+// Retained for backward compatibility — all calls now routed to Gemini 2.0 Flash (free tier)
 
 export async function generateText(
   prompt: string,
@@ -22,35 +12,14 @@ export async function generateText(
     responseFormat?: 'text' | 'json'
   } = {}
 ): Promise<{ content: string; inputTokens: number; outputTokens: number; costUsd: number }> {
-  const client = getOpenAIClient()
-  const model = options.model ?? 'gpt-4o'
-
-  const res = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt },
-    ],
-    max_tokens: options.maxTokens ?? 4096,
-    temperature: options.temperature ?? 0.7,
-    response_format:
-      options.responseFormat === 'json' ? { type: 'json_object' } : { type: 'text' },
+  return geminiGenerateText(prompt, systemPrompt, {
+    maxOutputTokens: options.maxTokens,
+    temperature: options.temperature,
+    responseFormat: options.responseFormat === 'json' ? 'json' : 'text',
   })
-
-  const inputTokens = res.usage?.prompt_tokens ?? 0
-  const outputTokens = res.usage?.completion_tokens ?? 0
-
-  // GPT-4o pricing: $2.50/1M input, $10.00/1M output
-  const costUsd = (inputTokens / 1_000_000) * 2.5 + (outputTokens / 1_000_000) * 10.0
-
-  return {
-    content: res.choices[0]?.message?.content ?? '',
-    inputTokens,
-    outputTokens,
-    costUsd,
-  }
 }
 
+// Pollinations.ai — free URL-based image generation, no API key required
 export async function generateImage(
   prompt: string,
   options: {
@@ -59,31 +28,21 @@ export async function generateImage(
     style?: 'vivid' | 'natural'
   } = {}
 ): Promise<{ url: string; costUsd: number }> {
-  const client = getOpenAIClient()
-
-  const res = await client.images.generate({
-    model: 'dall-e-3',
-    prompt,
-    size: options.size ?? '1792x1024',
-    quality: options.quality ?? 'hd',
-    style: options.style ?? 'vivid',
-    n: 1,
-  })
-
-  // DALL-E 3 HD 1792x1024 = $0.080 per image
-  const costUsd = options.quality === 'hd' ? 0.08 : 0.04
-
-  return {
-    url: (res.data as Array<{ url?: string }>)[0]?.url ?? '',
-    costUsd,
-  }
+  const width = options.size === '1024x1792' ? 1024 : 1280
+  const height = options.size === '1024x1792' ? 1792 : 720
+  const seed = Math.floor(Math.random() * 1_000_000)
+  const encoded = encodeURIComponent(prompt)
+  const url = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&seed=${seed}&nologo=true&enhance=true`
+  return { url, costUsd: 0 }
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const client = getOpenAIClient()
-  const res = await client.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text,
-  })
-  return res.data[0]?.embedding ?? []
+  // Gemini text-embedding-004: free tier, 768-dim embeddings
+  const { GoogleGenerativeAI } = await import('@google/generative-ai')
+  const apiKey = process.env.GOOGLE_AI_API_KEY
+  if (!apiKey) throw new Error('GOOGLE_AI_API_KEY is not set')
+  const genai = new GoogleGenerativeAI(apiKey)
+  const model = genai.getGenerativeModel({ model: 'text-embedding-004' })
+  const result = await model.embedContent(text)
+  return result.embedding.values
 }
