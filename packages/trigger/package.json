@@ -1,0 +1,24 @@
+{
+  "name": "@tubeforge/trigger",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx trigger.dev@latest dev",
+    "deploy": "npx trigger.dev@latest deploy"
+  },
+  "dependencies": {
+    "@trigger.dev/sdk": "^3.3.17",
+    "drizzle-orm": "^0.44.1",
+    "postgres": "^3.4.5",
+    "openai": "^4.87.4",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "cloudinary": "^2.6.1",
+    "zod": "^3.25.36",
+    "date-fns": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^22.10.2",
+    "dotenv": "^16.5.0"
+  }
+}
