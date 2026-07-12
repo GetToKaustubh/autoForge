@@ -83,7 +83,7 @@ function ThumbnailCard({ thumb, onRefetch }: { thumb: Thumbnail; onRefetch: () =
             <div className="text-center">
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">Generating thumbnails…</p>
-              <p className="text-xs text-muted-foreground">DALL-E 3, ~30 seconds each</p>
+              <p className="text-xs text-muted-foreground">Pollinations.ai, ~30 seconds each</p>
             </div>
           </div>
         )}
@@ -217,9 +217,9 @@ function GenerateThumbnailDialog() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">1 variant ($0.08)</SelectItem>
-                <SelectItem value="2">2 variants ($0.16)</SelectItem>
-                <SelectItem value="3">3 variants ($0.24)</SelectItem>
+                <SelectItem value="1">1 variant (free)</SelectItem>
+                <SelectItem value="2">2 variants (free)</SelectItem>
+                <SelectItem value="3">3 variants (free)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -277,7 +277,7 @@ export default function ThumbnailsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Thumbnails</h1>
-          <p className="text-muted-foreground text-sm mt-1">Generate YouTube thumbnails using DALL-E 3</p>
+          <p className="text-muted-foreground text-sm mt-1">Generate YouTube thumbnails using Pollinations.ai</p>
         </div>
         <GenerateThumbnailDialog />
       </div>
