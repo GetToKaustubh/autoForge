@@ -10,10 +10,11 @@ function getClient(): GoogleGenerativeAI {
   return _client
 }
 
-export const GEMINI_MODEL = 'gemini-2.5-flash'
+// Alias tracks Google's current flash-lite release, so it survives model retirements automatically
+export const GEMINI_MODEL = 'gemini-flash-lite-latest'
 
 function calcCost(inputTokens: number, outputTokens: number): number {
-  return (inputTokens / 1_000_000) * 0.30 + (outputTokens / 1_000_000) * 2.50
+  return (inputTokens / 1_000_000) * 0.25 + (outputTokens / 1_000_000) * 1.50
 }
 
 interface GeminiResult {

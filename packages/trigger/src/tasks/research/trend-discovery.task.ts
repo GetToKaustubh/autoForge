@@ -54,7 +54,7 @@ Return JSON:
       organizationId, userId, service: 'anthropic',
       unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
       costUsd: result.costUsd.toFixed(6), resourceType: 'trend_discovery', resourceId: trendId,
-      metadata: { model: 'gemini-2.5-flash' },
+      metadata: { model: 'gemini-3.1-flash-lite' },
     })
 
     const trendsArr = Array.isArray(result.data?.trends) ? result.data.trends : []

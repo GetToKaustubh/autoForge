@@ -5,11 +5,12 @@ function getClient() {
   return new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY)
 }
 
-export const GEMINI_MODEL = 'gemini-2.5-flash'
+// Alias tracks Google's current flash-lite release, so it survives model retirements automatically
+export const GEMINI_MODEL = 'gemini-flash-lite-latest'
 
-// Gemini 2.5 Flash pricing: $0.30/1M input (text), $2.50/1M output
+// Gemini 3.1 Flash-Lite pricing (current resolution of the alias above): $0.25/1M input (text), $1.50/1M output
 export function calcCost(inputTokens: number, outputTokens: number): number {
-  return (inputTokens / 1_000_000) * 0.30 + (outputTokens / 1_000_000) * 2.50
+  return (inputTokens / 1_000_000) * 0.25 + (outputTokens / 1_000_000) * 1.50
 }
 
 interface GeminiResult {

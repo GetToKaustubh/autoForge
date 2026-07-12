@@ -57,7 +57,7 @@ Return 15-20 keywords. difficulty and opportunity are 0-100.`
       organizationId, userId, service: 'openai',
       unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
       costUsd: result.costUsd.toFixed(6), resourceType: 'keyword_research', resourceId: researchId,
-      metadata: { model: 'gemini-2.5-flash' },
+      metadata: { model: 'gemini-3.1-flash-lite' },
     })
 
     const keywords = Array.isArray(result.data?.keywords) ? result.data.keywords : []
