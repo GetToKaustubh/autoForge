@@ -89,7 +89,54 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
   const [hook, setHook] = useState('')
   const [format, setFormat] = useState<VideoFormat | ''>('')
   const [niche, setNiche] = useState('')
+  const [selectedKeywords, setSelectedKeywords] = useState<string[]>([])
+  const [selectedTrends, setSelectedTrends] = useState<string[]>([])
+  const [customKeyword, setCustomKeyword] = useState('')
+  const [customTrend, setCustomTrend] = useState('')
   const queryClient = useQueryClient()
+
+  const { data: keywordData } = useQuery({
+    queryKey: ['keywords-for-idea', channelId],
+    queryFn: async () => {
+      const res = await fetch(`/api/research/keywords?limit=5`)
+      if (!res.ok) throw new Error('Failed to fetch keywords')
+      return res.json() as Promise<{ results: { results: { keywords?: { keyword: string }[] } | null }[] }>
+    },
+    enabled: open,
+  })
+  const availableKeywords = Array.from(new Set(
+    (keywordData?.results ?? []).flatMap((r) => (r.results?.keywords ?? []).map((k) => k.keyword)),
+  )).slice(0, 30)
+
+  const { data: trendData } = useQuery({
+    queryKey: ['trends-for-idea', channelId],
+    queryFn: async () => {
+      const res = await fetch(`/api/research/trends?limit=5`)
+      if (!res.ok) throw new Error('Failed to fetch trends')
+      return res.json() as Promise<{ results: { trendData: { trends?: { title: string }[] } | null }[] }>
+    },
+    enabled: open,
+  })
+  const availableTrends = Array.from(new Set(
+    (trendData?.results ?? []).flatMap((r) => (r.trendData?.trends ?? []).map((t) => t.title)),
+  )).slice(0, 20)
+
+  const toggleKeyword = (kw: string) => {
+    setSelectedKeywords((prev) => (prev.includes(kw) ? prev.filter((k) => k !== kw) : [...prev, kw]))
+  }
+  const toggleTrend = (t: string) => {
+    setSelectedTrends((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))
+  }
+  const addCustomKeyword = () => {
+    const v = customKeyword.trim()
+    if (v && !selectedKeywords.includes(v)) setSelectedKeywords((prev) => [...prev, v])
+    setCustomKeyword('')
+  }
+  const addCustomTrend = () => {
+    const v = customTrend.trim()
+    if (v && !selectedTrends.includes(v)) setSelectedTrends((prev) => [...prev, v])
+    setCustomTrend('')
+  }
 
   const { mutate: create, isPending } = useMutation({
     mutationFn: async () => {
@@ -115,7 +162,14 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
       const res = await fetch('/api/content/ideas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId, title: 'AI Generated', autoGenerate: true, niche }),
+        body: JSON.stringify({
+          channelId,
+          title: 'AI Generated',
+          autoGenerate: true,
+          niche,
+          keywords: selectedKeywords.length ? selectedKeywords : undefined,
+          trendContext: selectedTrends.length ? selectedTrends : undefined,
+        }),
       })
       if (!res.ok) throw new Error('Failed to trigger generation')
       return res.json()
@@ -123,20 +177,102 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['ideas'] })
       setNiche('')
+      setSelectedKeywords([])
+      setSelectedTrends([])
       onClose()
     },
   })
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add Video Idea</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
           <div className="space-y-2">
             <Label>Niche / Topic (required for AI Generate)</Label>
             <Input value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="e.g. 'Stoic philosophy quotes'" />
+          </div>
+          <div className="space-y-2">
+            <Label>Keywords (optional, sharpens AI Generate)</Label>
+            {availableKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {availableKeywords.map((kw) => (
+                  <button
+                    key={kw}
+                    type="button"
+                    onClick={() => toggleKeyword(kw)}
+                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                      selectedKeywords.includes(kw)
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background hover:bg-muted border-input'
+                    }`}
+                  >
+                    {kw}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input
+                value={customKeyword}
+                onChange={(e) => setCustomKeyword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomKeyword() } }}
+                placeholder="Add a custom keyword"
+                className="h-8 text-sm"
+              />
+              <Button type="button" size="sm" variant="outline" onClick={addCustomKeyword}>Add</Button>
+            </div>
+            {selectedKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedKeywords.map((kw) => (
+                  <Badge key={kw} variant="secondary" className="cursor-pointer" onClick={() => toggleKeyword(kw)}>
+                    {kw} ×
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>Trends (optional, sharpens AI Generate)</Label>
+            {availableTrends.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {availableTrends.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => toggleTrend(t)}
+                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                      selectedTrends.includes(t)
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background hover:bg-muted border-input'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input
+                value={customTrend}
+                onChange={(e) => setCustomTrend(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomTrend() } }}
+                placeholder="Add a custom trend"
+                className="h-8 text-sm"
+              />
+              <Button type="button" size="sm" variant="outline" onClick={addCustomTrend}>Add</Button>
+            </div>
+            {selectedTrends.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedTrends.map((t) => (
+                  <Badge key={t} variant="secondary" className="cursor-pointer" onClick={() => toggleTrend(t)}>
+                    {t} ×
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Title</Label>

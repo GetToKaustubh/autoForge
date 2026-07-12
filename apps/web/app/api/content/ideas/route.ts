@@ -22,6 +22,8 @@ const createIdeaSchema = z.object({
   trendId: z.string().uuid().optional(),
   autoGenerate: z.boolean().optional(), // trigger idea-generation task
   niche: z.string().min(2).max(200).optional(), // required when autoGenerate is true
+  keywords: z.array(z.string().max(100)).max(20).optional(),
+  trendContext: z.array(z.string().max(200)).max(10).optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -64,6 +66,8 @@ export async function POST(req: NextRequest) {
       organizationId: member.orgDbId,
       userId: member.userDbId,
       niche: data.niche,
+      keywords: data.keywords,
+      trendContext: data.trendContext,
     })
     return NextResponse.json({ triggerJobId: handle.id, status: 'processing' }, { status: 202 })
   }

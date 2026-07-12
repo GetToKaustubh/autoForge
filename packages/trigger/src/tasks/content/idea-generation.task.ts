@@ -16,14 +16,16 @@ export const ideaGenerationTask = task({
     userId: string
     niche: string
     keywords?: string[]
+    trendContext?: string[]
     count?: number
     format?: ValidFormat
     targetAudience?: string
   }) => {
-    const { channelId, organizationId, userId, niche, keywords = [], count = 10, format, targetAudience } = payload
+    const { channelId, organizationId, userId, niche, keywords = [], trendContext = [], count = 10, format, targetAudience } = payload
 
     const prompt = `Generate ${count} compelling YouTube video ideas for the "${niche}" niche.
 ${keywords.length > 0 ? `Target keywords: ${keywords.join(', ')}` : ''}
+${trendContext.length > 0 ? `Relevant current trends to consider: ${trendContext.join('; ')}` : ''}
 ${format ? `Preferred format: ${format}` : ''}
 ${targetAudience ? `Target audience: ${targetAudience}` : ''}
 
