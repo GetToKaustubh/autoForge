@@ -81,11 +81,15 @@ export const videoGenerationTask = task({
         const folder = `tubeforge/${payload.organizationId}/videos/${payload.videoId}/scenes`
         const publicId = `scene_${scene.scene_index}`
 
+        // Normalize every scene to the same resolution — Cloudinary's splice
+        // concatenation (used in video-pipeline) fails if clip sizes don't match,
+        // and stock footage sources come in whatever resolution the provider has.
         const uploadResult = await cloudinary.uploader.upload(videoUrl, {
           resource_type: 'video',
           folder,
           public_id: publicId,
           format: 'mp4',
+          transformation: [{ width: 1920, height: 1080, crop: 'fill' }],
         })
 
         sceneResults.push({
