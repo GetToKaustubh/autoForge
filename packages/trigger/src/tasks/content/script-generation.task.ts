@@ -44,22 +44,20 @@ Your scripts must:
 - Include natural transitions between sections
 - End with a strong call-to-action
 
-Output JSON with this exact structure:
+Output JSON with this exact structure (typically 5 sections: hook, intro, main, cta, outro — adjust as needed):
 {
   "sections": [
-    { "type": "hook", "content": "...", "duration_sec": 15, "notes": "..." },
-    { "type": "intro", "content": "...", "duration_sec": 30, "notes": "..." },
-    { "type": "main", "content": "...", "duration_sec": 480, "notes": "..." },
-    { "type": "cta", "content": "...", "duration_sec": 45, "notes": "..." },
-    { "type": "outro", "content": "...", "duration_sec": 30, "notes": "..." }
+    { "type": "string, e.g. hook/intro/main/cta/outro", "content": "the actual script text for this section", "duration_sec": "integer — estimate from this section's own word count at ~2.5 words/second, NOT a fixed value", "notes": "..." }
   ]
-}`
+}
+
+Critical: duration_sec for each section must be calculated from that section's actual word count (words / 2.5 ≈ seconds), never copied from an example. The sum of all duration_sec values must be within 10% of the target duration below.`
 
     const userPrompt = `Write a YouTube script for:
 Title: ${idea.title}
 Hook: ${idea.hook ?? 'Create a compelling hook'}
 Target keywords: ${(idea.targetKeywords ?? []).join(', ')}
-Target duration: ${Math.round(payload.targetDurationSec / 60)} minutes
+Target duration: ${Math.round(payload.targetDurationSec / 60)} minutes (${payload.targetDurationSec} seconds total — write enough content across all sections to actually fill this, and set each duration_sec from real word count)
 Tone: ${payload.tone}
 Format: ${idea.format ?? 'educational'}
 
