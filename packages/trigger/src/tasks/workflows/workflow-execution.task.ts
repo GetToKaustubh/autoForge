@@ -1,4 +1,4 @@
-import { task, logger, tasks } from '@trigger.dev/sdk'
+import { task, logger, tasks, runs } from '@trigger.dev/sdk'
 
 interface WorkflowStep {
   id: string
@@ -55,15 +55,15 @@ export const workflowExecutionTask = task({
           .where(eq(workflowRuns.id, workflowRunId))
 
         // Wait for step to complete before running next
-        const result = await handle.wait()
+        const result = await runs.poll(handle.id)
         stepResults[step.id] = {
-          status: result.ok ? 'completed' : 'failed',
+          status: result.isSuccess ? 'completed' : 'failed',
           jobId: handle.id,
           completedAt: new Date().toISOString(),
-          ...(result.ok ? {} : { error: String((result as { error?: unknown }).error ?? 'Unknown error') }),
+          ...(result.isSuccess ? {} : { error: result.error?.message ?? 'Unknown error' }),
         }
 
-        if (!result.ok) {
+        if (!result.isSuccess) {
           logger.error(`Step failed`, { stepId: step.id, type: step.type })
           await db
             .update(workflowRuns)
