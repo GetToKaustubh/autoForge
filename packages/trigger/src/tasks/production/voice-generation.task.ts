@@ -106,7 +106,10 @@ export const voiceGenerationTask = task({
         }
       )
 
-      const sectionDuration = section.duration_sec ?? charCount / 15 // ~15 chars/sec estimate
+      // Use Cloudinary's own measured duration from the uploaded audio file — the
+      // script's stated section.duration_sec is an AI estimate and can be badly
+      // wrong (confirmed live: a section declared 208s that actually plays for 78s).
+      const sectionDuration = uploadResult.duration ?? charCount / 15
       totalDurationSec += sectionDuration
 
       sectionResults.push({
