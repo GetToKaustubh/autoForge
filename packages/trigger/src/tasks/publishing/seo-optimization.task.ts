@@ -45,10 +45,10 @@ Return ONLY a JSON object:
   "tags": ["30-40 relevant tags, mix broad and specific"],
   "hashtags": ["#relevant", "#hashtags", "max 15"],
   "chapters": [{"timestamp_sec": 0, "title": "Intro"}],
-  "titleScore": 0.0,
-  "descriptionScore": 0.0,
-  "tagScore": 0.0,
-  "overallScore": 0.0,
+  "titleScore": number (0.0 to 1.0, e.g. 0.95 for a strong title),
+  "descriptionScore": number (0.0 to 1.0),
+  "tagScore": number (0.0 to 1.0),
+  "overallScore": number (0.0 to 1.0),
   "improvements": ["key changes made"]
 }`
 
