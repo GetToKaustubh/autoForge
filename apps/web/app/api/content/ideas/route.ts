@@ -21,6 +21,7 @@ const createIdeaSchema = z.object({
   nicheResearchId: z.string().uuid().optional(),
   trendId: z.string().uuid().optional(),
   autoGenerate: z.boolean().optional(), // trigger idea-generation task
+  niche: z.string().min(2).max(200).optional(), // required when autoGenerate is true
 })
 
 export async function POST(req: NextRequest) {
@@ -54,12 +55,15 @@ export async function POST(req: NextRequest) {
   if (!channel) return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
 
   if (autoGenerate) {
+    if (!data.niche) {
+      return NextResponse.json({ error: 'niche is required when autoGenerate is true' }, { status: 400 })
+    }
     // Trigger AI idea generation task (creates ideas in DB itself)
     const handle = await tasks.trigger(TASK_IDS.IDEA_GENERATION, {
       channelId: data.channelId,
       organizationId: member.orgDbId,
       userId: member.userDbId,
-      niche: data.description,
+      niche: data.niche,
     })
     return NextResponse.json({ triggerJobId: handle.id, status: 'processing' }, { status: 202 })
   }

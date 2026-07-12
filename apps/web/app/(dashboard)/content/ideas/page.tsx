@@ -88,6 +88,7 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
   const [title, setTitle] = useState('')
   const [hook, setHook] = useState('')
   const [format, setFormat] = useState<VideoFormat | ''>('')
+  const [niche, setNiche] = useState('')
   const queryClient = useQueryClient()
 
   const { mutate: create, isPending } = useMutation({
@@ -114,13 +115,14 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
       const res = await fetch('/api/content/ideas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId, title: 'AI Generated', autoGenerate: true }),
+        body: JSON.stringify({ channelId, title: 'AI Generated', autoGenerate: true, niche }),
       })
       if (!res.ok) throw new Error('Failed to trigger generation')
       return res.json()
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['ideas'] })
+      setNiche('')
       onClose()
     },
   })
@@ -132,6 +134,10 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
           <DialogTitle>Add Video Idea</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>Niche / Topic (required for AI Generate)</Label>
+            <Input value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="e.g. 'Stoic philosophy quotes'" />
+          </div>
           <div className="space-y-2">
             <Label>Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Your video idea title" />
@@ -155,7 +161,7 @@ function CreateIdeaDialog({ open, onClose, channelId }: { open: boolean; onClose
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => aiGenerate()} disabled={isGenerating || isPending}>
+          <Button variant="outline" onClick={() => aiGenerate()} disabled={!niche.trim() || isGenerating || isPending}>
             {isGenerating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating...</> : <><Wand2 className="h-4 w-4 mr-2" />AI Generate</>}
           </Button>
           <Button onClick={() => create()} disabled={!title.trim() || isPending || isGenerating}>
