@@ -256,7 +256,7 @@ export default function VoicePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Voice Generation</h1>
-          <p className="text-muted-foreground text-sm mt-1">Convert scripts to AI voice audio via ElevenLabs</p>
+          <p className="text-muted-foreground text-sm mt-1">Convert scripts to AI voice audio via Microsoft Edge TTS</p>
         </div>
         <GenerateVoiceDialog scripts={scripts} />
       </div>

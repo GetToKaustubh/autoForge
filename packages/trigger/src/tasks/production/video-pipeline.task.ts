@@ -23,7 +23,9 @@ export const videoPipelineTask = task({
     const { db } = await import('../../lib/db')
     const { videos } = await import('../../lib/db/schema')
     const { eq } = await import('drizzle-orm')
-    const { v2: cloudinary } = await import('cloudinary')
+    const cloudinaryModule = await import('cloudinary')
+    const cloudinary = (cloudinaryModule as unknown as { v2?: typeof cloudinaryModule.v2 }).v2
+      ?? (cloudinaryModule as unknown as { default: { v2: typeof cloudinaryModule.v2 } }).default.v2
 
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
