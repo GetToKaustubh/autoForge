@@ -49,10 +49,22 @@ function formatDuration(sec: number | null) {
 function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClose: () => void; channelId: string }) {
   const [title, setTitle] = useState('')
   const [withAI, setWithAI] = useState(false)
+  const [ideaId, setIdeaId] = useState('')
   const [duration, setDuration] = useState('600')
   const [tone, setTone] = useState('engaging and educational')
   const router = useRouter()
   const queryClient = useQueryClient()
+
+  const { data: ideasData } = useQuery({
+    queryKey: ['ideas-for-script', channelId],
+    queryFn: async () => {
+      const res = await fetch(`/api/content/ideas?channelId=${channelId}&limit=100`)
+      if (!res.ok) throw new Error('Failed to fetch ideas')
+      return res.json() as Promise<{ ideas: { id: string; title: string; status: string }[] }>
+    },
+    enabled: open,
+  })
+  const linkableIdeas = (ideasData?.ideas ?? []).filter((i) => i.status === 'approved' || i.status === 'in_production')
 
   const { mutate: create, isPending } = useMutation({
     mutationFn: async () => {
@@ -63,6 +75,7 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
           channelId,
           title,
           generateWithAI: withAI,
+          ideaId: ideaId || undefined,
           targetDurationSec: parseInt(duration),
           tone,
         }),
@@ -72,6 +85,7 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
     },
     onSuccess: (script) => {
       void queryClient.invalidateQueries({ queryKey: ['scripts'] })
+      setIdeaId('')
       onClose()
       router.push(`/content/scripts/${script.id}`)
     },
@@ -100,11 +114,24 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
               <label htmlFor="withAI" className="text-sm font-medium cursor-pointer flex items-center gap-1.5">
                 <Wand2 className="h-3.5 w-3.5" />Generate with AI
               </label>
-              <p className="text-xs text-muted-foreground">Claude Sonnet 4.6 will write the full script</p>
+              <p className="text-xs text-muted-foreground">Gemini will write the full script</p>
             </div>
           </div>
           {withAI && (
             <>
+              <div className="space-y-2">
+                <Label>Idea to write from (required)</Label>
+                <Select value={ideaId} onValueChange={setIdeaId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={linkableIdeas.length ? 'Select an idea' : 'No approved ideas yet'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {linkableIdeas.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>{i.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label>Target Duration</Label>
                 <Select value={duration} onValueChange={setDuration}>
@@ -128,7 +155,7 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
           )}
         </div>
         <DialogFooter>
-          <Button onClick={() => create()} disabled={!title.trim() || isPending}>
+          <Button onClick={() => create()} disabled={!title.trim() || (withAI && !ideaId) || isPending}>
             {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{withAI ? 'Generating...' : 'Creating...'}</> : 'Create Script'}
           </Button>
         </DialogFooter>

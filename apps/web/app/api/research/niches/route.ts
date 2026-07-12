@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       channelId: channelId ?? null,
       createdBy: member.userDbId,
       query,
-      modelUsed: 'claude-sonnet-4-6',
+      modelUsed: 'gemini-flash-lite-latest',
       status: 'pending',
     })
     .returning({ id: nicheResearch.id })
