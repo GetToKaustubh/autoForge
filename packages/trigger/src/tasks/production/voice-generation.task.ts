@@ -63,6 +63,7 @@ export const voiceGenerationTask = task({
     const sectionResults: Array<{
       section_index: number
       cloudinary_url: string
+      cloudinary_public_id: string
       duration_sec: number
       characters_used: number
     }> = []
@@ -89,7 +90,7 @@ export const voiceGenerationTask = task({
       const audioBuffer = Buffer.concat(chunks)
 
       // Upload to Cloudinary
-      const uploadResult = await new Promise<{ secure_url: string; duration?: number }>(
+      const uploadResult = await new Promise<{ secure_url: string; public_id: string; duration?: number }>(
         (resolve, reject) => {
           cloudinary.uploader.upload_stream(
             {
@@ -115,6 +116,7 @@ export const voiceGenerationTask = task({
       sectionResults.push({
         section_index: i,
         cloudinary_url: uploadResult.secure_url,
+        cloudinary_public_id: uploadResult.public_id,
         duration_sec: sectionDuration,
         characters_used: charCount,
       })
@@ -126,9 +128,29 @@ export const voiceGenerationTask = task({
         .where(eq(voiceGenerations.id, payload.voiceGenId))
     }
 
-    // For the final combined audio, use Cloudinary's concatenation transformation
-    const firstSection = sectionResults[0]
-    const finalAudioUrl = firstSection?.cloudinary_url ?? ''
+    // Concatenate all section clips into one continuous audio file via Cloudinary
+    // splice — previously this just took section 0's URL and called it "full audio",
+    // so only the hook ever played and the rest of the video rendered silent.
+    let finalAudioUrl = sectionResults[0]?.cloudinary_url ?? ''
+    if (sectionResults.length > 1) {
+      const basePublicId = sectionResults[0]!.cloudinary_public_id
+      const spliceTransformation = sectionResults.slice(1).flatMap((s) => [
+        { flags: 'splice', overlay: `video:${s.cloudinary_public_id.replace(/\//g, ':')}` },
+        { flags: 'layer_apply' },
+      ])
+      try {
+        const merged = await cloudinary.uploader.explicit(basePublicId, {
+          type: 'upload',
+          resource_type: 'video',
+          eager: [{ transformation: spliceTransformation, format: 'mp3' }],
+          eager_async: false,
+        })
+        const eager = merged.eager?.[0] as { secure_url?: string } | undefined
+        if (eager?.secure_url) finalAudioUrl = eager.secure_url
+      } catch (err) {
+        logger.info(`Audio concat failed, falling back to section 0 only: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
 
     // Mark completed
     await db
