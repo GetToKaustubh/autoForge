@@ -63,15 +63,16 @@ export const youtubeUploadTask = task({
 
     logger.info(`Fetched video for ${payload.videoId}: ${Math.round(videoSize / 1024 / 1024)}MB, starting resumable upload`)
 
-    // YouTube rejects the whole upload if combined tag length exceeds 500 chars
-    // (including comma separators) - confirmed live, SEO can generate lists that
-    // exceed this since the AI has no hard enforcement of the limit. Trim
-    // defensively regardless of what upstream produced.
+    // YouTube rejects the whole upload if combined tag length exceeds 500 chars.
+    // Per their docs, a tag containing a space is treated as quote-wrapped and
+    // those quotes count too - first attempt at this fix missed that and still
+    // got rejected in production despite summing to under 500 without it.
     const rawTags = video.ytTags ?? []
     const tags: string[] = []
     let tagCharCount = 0
     for (const tag of rawTags) {
-      const addedLength = tag.length + (tags.length > 0 ? 1 : 0) // +1 for comma separator
+      const quotedLength = tag.includes(' ') ? tag.length + 2 : tag.length
+      const addedLength = quotedLength + (tags.length > 0 ? 1 : 0) // +1 for comma separator
       if (tagCharCount + addedLength > 500) break
       tags.push(tag)
       tagCharCount += addedLength
