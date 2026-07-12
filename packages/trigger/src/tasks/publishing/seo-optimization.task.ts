@@ -42,7 +42,7 @@ Return ONLY a JSON object:
 {
   "optimizedTitle": "string (max 100 chars, primary keyword near start)",
   "optimizedDescription": "string (max 5000 chars, keyword-rich first 150 chars)",
-  "tags": ["30-40 relevant tags, mix broad and specific"],
+  "tags": ["relevant tags, mix broad and specific — YouTube caps combined tag length at 500 characters total including separators, so keep the full list well under that (roughly 15-25 short tags, not 30-40)"],
   "hashtags": ["#relevant", "#hashtags", "max 15"],
   "chapters": [{"timestamp_sec": 0, "title": "Intro"}],
   "titleScore": number (0.0 to 1.0, e.g. 0.95 for a strong title),

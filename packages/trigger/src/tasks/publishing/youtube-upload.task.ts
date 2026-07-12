@@ -63,12 +63,26 @@ export const youtubeUploadTask = task({
 
     logger.info(`Fetched video for ${payload.videoId}: ${Math.round(videoSize / 1024 / 1024)}MB, starting resumable upload`)
 
+    // YouTube rejects the whole upload if combined tag length exceeds 500 chars
+    // (including comma separators) - confirmed live, SEO can generate lists that
+    // exceed this since the AI has no hard enforcement of the limit. Trim
+    // defensively regardless of what upstream produced.
+    const rawTags = video.ytTags ?? []
+    const tags: string[] = []
+    let tagCharCount = 0
+    for (const tag of rawTags) {
+      const addedLength = tag.length + (tags.length > 0 ? 1 : 0) // +1 for comma separator
+      if (tagCharCount + addedLength > 500) break
+      tags.push(tag)
+      tagCharCount += addedLength
+    }
+
     // Initiate resumable upload session
     const metadata = {
       snippet: {
         title: video.ytTitle ?? video.title,
         description: video.ytDescription ?? video.description ?? '',
-        tags: video.ytTags ?? [],
+        tags,
         categoryId: video.ytCategoryId ?? '22', // People & Blogs
         defaultLanguage: video.ytLanguage ?? 'en',
       },
