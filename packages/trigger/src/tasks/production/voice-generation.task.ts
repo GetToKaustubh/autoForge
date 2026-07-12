@@ -1,5 +1,6 @@
 import { task, logger } from '@trigger.dev/sdk'
 import { z } from 'zod'
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 
 const voicePayloadSchema = z.object({
   voiceGenId: z.string().uuid(),
@@ -64,7 +65,7 @@ export const voiceGenerationTask = task({
       characters_used: number
     }> = []
 
-    // Generate audio per section sequentially (ElevenLabs rate limits)
+    // Generate audio per section sequentially
     for (let i = 0; i < sections.length; i++) {
       const section = sections[i]
       if (!section) continue
@@ -74,34 +75,16 @@ export const voiceGenerationTask = task({
 
       logger.info(`Generating section ${i} audio: ${charCount} chars`)
 
-      // Call ElevenLabs TTS API
-      const ttsResponse = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${payload.voiceId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'xi-api-key': process.env.ELEVENLABS_API_KEY!,
-          },
-          body: JSON.stringify({
-            text,
-            model_id: 'eleven_turbo_v2_5',
-            voice_settings: {
-              stability: payload.voiceSettings.stability,
-              similarity_boost: payload.voiceSettings.similarityBoost,
-              style: payload.voiceSettings.style,
-              use_speaker_boost: payload.voiceSettings.useSpeakerBoost,
-            },
-          }),
-        }
-      )
-
-      if (!ttsResponse.ok) {
-        const error = await ttsResponse.text()
-        throw new Error(`ElevenLabs error for section ${i}: ${error}`)
+      // Microsoft Edge neural TTS (free, no API key) via msedge-tts
+      const tts = new MsEdgeTTS()
+      await tts.setMetadata(payload.voiceId, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+      const { audioStream } = tts.toStream(text)
+      const chunks: Buffer[] = []
+      for await (const chunk of audioStream) {
+        chunks.push(chunk as Buffer)
       }
-
-      const audioBuffer = Buffer.from(await ttsResponse.arrayBuffer())
+      tts.close()
+      const audioBuffer = Buffer.concat(chunks)
 
       // Upload to Cloudinary
       const uploadResult = await new Promise<{ secure_url: string; duration?: number }>(
@@ -155,17 +138,15 @@ export const voiceGenerationTask = task({
       })
       .where(eq(voiceGenerations.id, payload.voiceGenId))
 
-    // Record API usage (ElevenLabs bills per character)
-    const costPerChar = 0.00012 // ~$0.12 per 1K chars (Creator plan)
-    const costUsd = (totalChars * costPerChar).toFixed(6)
-
+    // Microsoft Edge TTS is free. api_service enum has no edge-tts value (would need a migration),
+    // so reusing 'elevenlabs' as the closest existing label — same workaround already used for Gemini ('openai').
     await db.insert(apiUsage).values({
       organizationId: payload.organizationId,
       service: 'elevenlabs',
       endpoint: 'text-to-speech',
       unitsUsed: totalChars.toString(),
       unitType: 'chars',
-      costUsd,
+      costUsd: '0.000000',
       resourceType: 'voice_generation',
       resourceId: payload.voiceGenId,
     })

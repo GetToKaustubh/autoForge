@@ -9,7 +9,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
 import { useActiveChannel } from '@/hooks/use-channel'
 import { Mic, Play, Pause, Loader2, Plus, CheckCircle, XCircle, Clock } from 'lucide-react'
 
@@ -29,14 +28,14 @@ interface VoiceGeneration {
 }
 
 const POPULAR_VOICES = [
-  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (Female, American)' },
-  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi (Female, American)' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella (Female, American)' },
-  { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni (Male, American)' },
-  { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold (Male, American)' },
-  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Male, American)' },
-  { id: 'yoZ06aMxZJJ28mfd3POQ', name: 'Sam (Male, American)' },
-  { id: 'MF3mGyEYCl7XYWbV9V6O', name: 'Elli (Female, American)' },
+  { id: 'en-US-GuyNeural', name: 'Guy (Male, American)' },
+  { id: 'en-US-DavisNeural', name: 'Davis (Male, American)' },
+  { id: 'en-US-AriaNeural', name: 'Aria (Female, American)' },
+  { id: 'en-US-JennyNeural', name: 'Jenny (Female, American)' },
+  { id: 'en-US-AmberNeural', name: 'Amber (Female, American)' },
+  { id: 'en-GB-RyanNeural', name: 'Ryan (Male, British)' },
+  { id: 'en-GB-SoniaNeural', name: 'Sonia (Female, British)' },
+  { id: 'en-AU-WilliamNeural', name: 'William (Male, Australian)' },
 ]
 
 function StatusBadge({ status }: { status: VoiceGeneration['status'] }) {
@@ -131,8 +130,6 @@ function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: 
   const [open, setOpen] = useState(false)
   const [scriptId, setScriptId] = useState('')
   const [voiceId, setVoiceId] = useState(POPULAR_VOICES[0]!.id)
-  const [stability, setStability] = useState(0.5)
-  const [similarityBoost, setSimilarityBoost] = useState(0.75)
 
   const channelId = useActiveChannel()?.id ?? ''
 
@@ -147,7 +144,6 @@ function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: 
           channelId,
           voiceId,
           voiceName: selectedVoice?.name,
-          voiceSettings: { stability, similarityBoost, style: 0, useSpeakerBoost: true },
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to start voice generation')
@@ -195,25 +191,6 @@ function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: 
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Stability — {Math.round(stability * 100)}%</Label>
-            <Slider
-              min={0} max={1} step={0.05}
-              value={[stability]}
-              onValueChange={([v]) => setStability(v ?? 0.5)}
-            />
-            <p className="text-xs text-muted-foreground">Higher = more consistent, lower = more expressive</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Similarity Boost — {Math.round(similarityBoost * 100)}%</Label>
-            <Slider
-              min={0} max={1} step={0.05}
-              value={[similarityBoost]}
-              onValueChange={([v]) => setSimilarityBoost(v ?? 0.75)}
-            />
           </div>
 
           {mutation.error && (

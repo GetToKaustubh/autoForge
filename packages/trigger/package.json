@@ -12,6 +12,7 @@
     "cloudinary": "^2.6.1",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.44.1",
+    "msedge-tts": "^2.0.7",
     "postgres": "^3.4.5",
     "zod": "^3.25.36"
   },
