@@ -81,15 +81,18 @@ export const videoGenerationTask = task({
         const folder = `tubeforge/${payload.organizationId}/videos/${payload.videoId}/scenes`
         const publicId = `scene_${scene.scene_index}`
 
-        // Normalize every scene to the same resolution — Cloudinary's splice
-        // concatenation (used in video-pipeline) fails if clip sizes don't match,
-        // and stock footage sources come in whatever resolution the provider has.
+        // Normalize every scene to the same resolution (Cloudinary's splice concat
+        // fails on mismatched clip sizes) and trim to the requested scene duration —
+        // stock footage source clips run to whatever length the provider has, often
+        // far longer than the scene's intended duration_sec, which otherwise makes
+        // the final concatenated video much longer than the pipeline's own duration
+        // estimate (sum of duration_sec) implies.
         const uploadResult = await cloudinary.uploader.upload(videoUrl, {
           resource_type: 'video',
           folder,
           public_id: publicId,
           format: 'mp4',
-          transformation: [{ width: 1920, height: 1080, crop: 'fill' }],
+          transformation: [{ width: 1920, height: 1080, crop: 'fill', duration: scene.duration_sec }],
         })
 
         sceneResults.push({
