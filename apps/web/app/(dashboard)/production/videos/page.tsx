@@ -223,6 +223,17 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
     onSuccess: (data) => setAutoScenes(data.scenes),
   })
 
+  const { data: voiceGensData } = useQuery({
+    queryKey: ['voice-for-video', scriptId],
+    queryFn: async () => {
+      const res = await fetch(`/api/production/voice?scriptId=${scriptId}&limit=10`)
+      if (!res.ok) throw new Error('Failed to fetch voice generations')
+      return res.json() as Promise<{ voiceGenerations: Array<{ id: string; status: string }> }>
+    },
+    enabled: !!scriptId,
+  })
+  const linkedVoiceGen = voiceGensData?.voiceGenerations.find((v) => v.status === 'completed')
+
   const mutation = useMutation({
     mutationFn: async () => {
       const scenes = autoScenes ?? scenesText
@@ -237,6 +248,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           channelId: activeChannel!.id,
           title,
           scriptId: scriptId || undefined,
+          voiceGenId: linkedVoiceGen?.id,
           scenes: scenes.length > 0 ? scenes : undefined,
           provider,
         }),
@@ -281,6 +293,13 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
                 ))}
               </SelectContent>
             </Select>
+            {scriptId && (
+              <p className="text-xs text-muted-foreground">
+                {linkedVoiceGen
+                  ? '✓ Voice narration will be attached automatically'
+                  : 'No completed voice generation for this script — video will render without narration audio'}
+              </p>
+            )}
           </div>
 
           {scriptId && !autoScenes && (
