@@ -56,7 +56,7 @@ Return 5-8 niches. score is 0-100.`
       .update(nicheResearch)
       .set({
         niches: result.data,
-        modelUsed: 'gemini-2.0-flash',
+        modelUsed: 'gemini-2.5-flash',
         tokensUsed: result.inputTokens + result.outputTokens,
         status: 'completed',
       })
@@ -66,7 +66,7 @@ Return 5-8 niches. score is 0-100.`
       organizationId, userId, service: 'openai',
       unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
       costUsd: result.costUsd.toFixed(6), resourceType: 'niche_research', resourceId: researchId,
-      metadata: { model: 'gemini-2.0-flash', inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+      metadata: { model: 'gemini-2.5-flash', inputTokens: result.inputTokens, outputTokens: result.outputTokens },
     })
 
     const nichesArr = Array.isArray(result.data?.niches) ? result.data.niches : []

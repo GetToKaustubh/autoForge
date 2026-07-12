@@ -86,7 +86,7 @@ Script excerpt: ${scriptSummary || 'Not available'}`
         descriptionScore: seoData.descriptionScore,
         tagScore: seoData.tagScore,
         overallScore: seoData.overallScore,
-        modelUsed: 'gemini-2.0-flash',
+        modelUsed: 'gemini-2.5-flash',
         updatedAt: new Date(),
       })
       .where(eq(seoOptimizations.id, payload.seoId))
@@ -111,7 +111,7 @@ Script excerpt: ${scriptSummary || 'Not available'}`
       costUsd: result.costUsd.toFixed(6),
       resourceType: 'video',
       resourceId: payload.videoId,
-      metadata: { model: 'gemini-2.0-flash' },
+      metadata: { model: 'gemini-2.5-flash' },
     })
 
     logger.info(`SEO optimization ${payload.seoId} complete: overall score ${seoData.overallScore}`)

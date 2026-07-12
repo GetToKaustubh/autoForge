@@ -80,7 +80,7 @@ Make the script ready to be read aloud by a voice-over artist.`
         fullText,
         wordCount,
         estimatedDurationSec: estimatedDuration,
-        modelUsed: 'gemini-2.0-flash',
+        modelUsed: 'gemini-2.5-flash',
         tokensUsed: result.inputTokens + result.outputTokens,
         status: 'review',
         updatedAt: new Date(),
@@ -96,7 +96,7 @@ Make the script ready to be read aloud by a voice-over artist.`
       costUsd: result.costUsd.toFixed(6),
       resourceType: 'script',
       resourceId: payload.scriptId,
-      metadata: { model: 'gemini-2.0-flash', inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+      metadata: { model: 'gemini-2.5-flash', inputTokens: result.inputTokens, outputTokens: result.outputTokens },
     })
 
     logger.info(`Script generation ${payload.scriptId} completed: ${wordCount} words`)

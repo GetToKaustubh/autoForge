@@ -66,7 +66,7 @@ Return JSON:
       organizationId, userId, service: 'openai',
       unitsUsed: String(result.inputTokens + result.outputTokens), unitType: 'tokens',
       costUsd: result.costUsd.toFixed(6), resourceType: 'idea_generation', resourceId: channelId,
-      metadata: { model: 'gemini-2.0-flash' },
+      metadata: { model: 'gemini-2.5-flash' },
     })
 
     logger.info(`Idea generation for channel ${channelId}: ${inserted.length} ideas created`)

@@ -10,10 +10,10 @@ function getClient(): GoogleGenerativeAI {
   return _client
 }
 
-export const GEMINI_MODEL = 'gemini-2.0-flash'
+export const GEMINI_MODEL = 'gemini-2.5-flash'
 
 function calcCost(inputTokens: number, outputTokens: number): number {
-  return (inputTokens / 1_000_000) * 0.075 + (outputTokens / 1_000_000) * 0.30
+  return (inputTokens / 1_000_000) * 0.30 + (outputTokens / 1_000_000) * 2.50
 }
 
 interface GeminiResult {
