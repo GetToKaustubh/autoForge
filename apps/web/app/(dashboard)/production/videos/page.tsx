@@ -207,7 +207,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
   const [title, setTitle] = useState('')
   const [scriptId, setScriptId] = useState('')
   const [scenesText, setScenesText] = useState('')
-  const [provider, setProvider] = useState<'runway' | 'pika'>('runway')
+  const [provider, setProvider] = useState<'stock' | 'runway' | 'pika'>('stock')
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -283,15 +283,20 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           {scenesText.trim() && (
             <div className="space-y-2">
               <Label>Video Provider</Label>
-              <Select value={provider} onValueChange={(v) => setProvider(v as 'runway' | 'pika')}>
+              <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'runway' | 'pika')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="stock">Stock Footage — Pexels (free)</SelectItem>
                   <SelectItem value="runway">Runway Gen-3 (~$0.25/scene)</SelectItem>
                   <SelectItem value="pika">Pika Labs (~$0.20/scene)</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Stock footage matches each scene prompt to free Pexels video/photos — best for
+                quote/facts-style content. Runway/Pika generate original AI video per scene.
+              </p>
             </div>
           )}
 

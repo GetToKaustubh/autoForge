@@ -1,5 +1,6 @@
 import { task, logger } from '@trigger.dev/sdk'
 import { z } from 'zod'
+import type { v2 as CloudinaryV2 } from 'cloudinary'
 
 const sceneSchema = z.object({
   scene_index: z.number().int(),
@@ -13,7 +14,7 @@ const videoGenerationPayloadSchema = z.object({
   organizationId: z.string().uuid(),
   channelId: z.string().uuid(),
   scenes: z.array(sceneSchema).min(1).max(30),
-  provider: z.enum(['runway', 'pika']).default('runway'),
+  provider: z.enum(['stock', 'runway', 'pika']).default('stock'),
   model: z.enum(['gen3a_turbo', 'gen4_turbo']).default('gen3a_turbo'),
 })
 
@@ -65,7 +66,10 @@ export const videoGenerationTask = task({
       try {
         let videoUrl: string
 
-        if (payload.provider === 'runway') {
+        if (payload.provider === 'stock') {
+          videoUrl = await generateWithStockFootage(scene, cloudinary)
+          // Pexels is free — cost stays 0
+        } else if (payload.provider === 'runway') {
           videoUrl = await generateWithRunway(scene)
           totalCostUsd += estimateRunwayCost(scene.duration_sec)
         } else {
@@ -129,9 +133,10 @@ export const videoGenerationTask = task({
       .set({ pipelineStage: 'scenes_ready', scenes: sceneResults })
       .where(eq(videos.id, payload.videoId))
 
+    // api_service enum has no 'stock' value (Pexels, would need a migration) — reuse 'cloudinary' as closest label
     await db.insert(apiUsage).values({
       organizationId: payload.organizationId,
-      service: payload.provider,
+      service: payload.provider === 'stock' ? 'cloudinary' : payload.provider,
       endpoint: 'video-generation',
       unitsUsed: String(completedScenes),
       unitType: 'scenes',
@@ -144,6 +149,48 @@ export const videoGenerationTask = task({
     return { videoId: payload.videoId, completedScenes, failedScenes, totalCostUsd }
   },
 })
+
+// Free stock footage via Pexels, matched to the scene's visual prompt.
+// Falls back to a still photo animated with Cloudinary's Ken Burns (zoompan) effect
+// when no matching stock video exists for the query.
+async function generateWithStockFootage(scene: z.infer<typeof sceneSchema>, cloudinary: typeof CloudinaryV2): Promise<string> {
+  const apiKey = process.env.PEXELS_API_KEY!
+  const query = scene.prompt.slice(0, 100)
+
+  const videoRes = await fetch(
+    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape`,
+    { headers: { Authorization: apiKey } },
+  )
+  if (!videoRes.ok) throw new Error(`Pexels video search failed: ${videoRes.status} — ${await videoRes.text()}`)
+  const videoData = (await videoRes.json()) as {
+    videos: Array<{ video_files: Array<{ link: string; width: number; height: number; quality: string }> }>
+  }
+  const match = videoData.videos[0]
+  if (match) {
+    const file = match.video_files.find((f) => f.quality === 'hd' && f.width >= 1280)
+      ?? match.video_files.find((f) => f.width >= 1280)
+      ?? match.video_files[0]
+    if (file) return file.link
+  }
+
+  // No stock video match — fall back to a photo animated into a short zoom/pan clip
+  const photoRes = await fetch(
+    `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape`,
+    { headers: { Authorization: apiKey } },
+  )
+  if (!photoRes.ok) throw new Error(`Pexels photo search failed: ${photoRes.status} — ${await photoRes.text()}`)
+  const photoData = (await photoRes.json()) as { photos: Array<{ src: { large2x: string } }> }
+  const photoUrl = photoData.photos[0]?.src.large2x
+  if (!photoUrl) throw new Error(`No Pexels video or photo found for prompt: "${scene.prompt}"`)
+
+  const imgUpload = await cloudinary.uploader.upload(photoUrl, { resource_type: 'image' })
+  return cloudinary.url(imgUpload.public_id, {
+    resource_type: 'image',
+    transformation: [{ effect: `zoompan:maxzoom_1.6;du_${Math.max(3, Math.round(scene.duration_sec))}` }],
+    format: 'mp4',
+    secure: true,
+  })
+}
 
 async function generateWithRunway(scene: z.infer<typeof sceneSchema>): Promise<string> {
   const body: Record<string, unknown> = {

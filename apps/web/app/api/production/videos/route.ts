@@ -22,7 +22,7 @@ const createVideoSchema = z.object({
     duration_sec: z.number().default(5),
     reference_image_url: z.string().url().optional(),
   })).optional(),
-  provider: z.enum(['runway', 'pika']).default('runway'),
+  provider: z.enum(['stock', 'runway', 'pika']).default('stock'),
 })
 
 export async function POST(req: NextRequest) {
