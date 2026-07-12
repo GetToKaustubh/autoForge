@@ -146,7 +146,21 @@ export const voiceGenerationTask = task({
           eager_async: false,
         })
         const eager = merged.eager?.[0] as { secure_url?: string } | undefined
-        if (eager?.secure_url) finalAudioUrl = eager.secure_url
+        if (eager?.secure_url) {
+          // Re-upload the merged result as its own clean asset. Otherwise fullAudioUrl
+          // is a transformation-chain URL, and downstream code (video-pipeline's
+          // extractCloudinaryPublicId) that expects a plain asset URL will instead
+          // capture the whole transformation chain as if it were a public_id and
+          // nest it into another overlay layer — confirmed live, this produced an
+          // invalid overlay reference that silently broke video rendering.
+          const reupload = await cloudinary.uploader.upload(eager.secure_url, {
+            resource_type: 'video',
+            folder: `tubeforge/${payload.organizationId}/voice/${payload.voiceGenId}`,
+            public_id: 'full_audio',
+            format: 'mp3',
+          })
+          finalAudioUrl = reupload.secure_url
+        }
       } catch (err) {
         logger.info(`Audio concat failed, falling back to section 0 only: ${err instanceof Error ? err.message : String(err)}`)
       }
