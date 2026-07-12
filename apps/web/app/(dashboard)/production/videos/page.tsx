@@ -208,10 +208,24 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
   const [scriptId, setScriptId] = useState('')
   const [scenesText, setScenesText] = useState('')
   const [provider, setProvider] = useState<'stock' | 'runway' | 'pika'>('stock')
+  const [autoScenes, setAutoScenes] = useState<Array<{ scene_index: number; prompt: string; duration_sec: number }> | null>(null)
+
+  const autoGenMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/production/videos/scenes-from-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scriptId }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to generate scenes')
+      return res.json() as Promise<{ scenes: Array<{ scene_index: number; prompt: string; duration_sec: number }> }>
+    },
+    onSuccess: (data) => setAutoScenes(data.scenes),
+  })
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const scenes = scenesText
+      const scenes = autoScenes ?? scenesText
         .split('\n')
         .filter((l) => l.trim())
         .map((prompt, i) => ({ scene_index: i, prompt: prompt.trim(), duration_sec: 5 }))
@@ -236,6 +250,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
       setTitle('')
       setScenesText('')
       setScriptId('')
+      setAutoScenes(null)
     },
   })
 
@@ -256,7 +271,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
 
           <div className="space-y-2">
             <Label>Link Script (optional)</Label>
-            <Select value={scriptId} onValueChange={setScriptId}>
+            <Select value={scriptId} onValueChange={(v) => { setScriptId(v); setAutoScenes(null) }}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a script" />
               </SelectTrigger>
@@ -268,19 +283,60 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Scene Prompts (one per line, optional)</Label>
-            <Textarea
-              placeholder={`Opening shot of a futuristic city skyline at dawn\nClose-up of AI chips glowing with blue light\nMontage of people using AI tools at work`}
-              value={scenesText}
-              onChange={(e) => setScenesText(e.target.value)}
-              rows={5}
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">Each line = 1 scene (5 seconds). Leave empty to add scenes later.</p>
-          </div>
+          {scriptId && !autoScenes && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => autoGenMutation.mutate()}
+              disabled={autoGenMutation.isPending}
+            >
+              {autoGenMutation.isPending ? (
+                <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Planning scenes from script…</>
+              ) : (
+                'Auto-generate scenes from script'
+              )}
+            </Button>
+          )}
+          {autoGenMutation.error && (
+            <p className="text-sm text-destructive">{(autoGenMutation.error as Error).message}</p>
+          )}
 
-          {scenesText.trim() && (
+          {autoScenes ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Scenes (auto-generated from script)</Label>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAutoScenes(null)}>
+                  Clear
+                </Button>
+              </div>
+              <div className="border rounded-md divide-y max-h-48 overflow-y-auto text-sm">
+                {autoScenes.map((s) => (
+                  <div key={s.scene_index} className="flex items-center justify-between px-3 py-1.5">
+                    <span className="truncate">{s.prompt}</span>
+                    <span className="text-xs text-muted-foreground shrink-0 ml-2">{s.duration_sec}s</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {autoScenes.length} scenes · {autoScenes.reduce((sum, s) => sum + s.duration_sec, 0)}s total
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Scene Prompts (one per line, optional)</Label>
+              <Textarea
+                placeholder={`Opening shot of a futuristic city skyline at dawn\nClose-up of AI chips glowing with blue light\nMontage of people using AI tools at work`}
+                value={scenesText}
+                onChange={(e) => setScenesText(e.target.value)}
+                rows={5}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">Each line = 1 scene (5 seconds). Leave empty to add scenes later.</p>
+            </div>
+          )}
+
+          {(scenesText.trim() || autoScenes) && (
             <div className="space-y-2">
               <Label>Video Provider</Label>
               <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'runway' | 'pika')}>
