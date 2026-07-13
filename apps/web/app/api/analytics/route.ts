@@ -85,6 +85,7 @@ export async function GET(request: Request) {
   const topVideosRaw = await db
     .select({
       videoId: videos.id,
+      channelId: videos.channelId,
       title: videos.title,
       ytUrl: videos.ytUrl,
       ytViewCount: videos.ytViewCount,
@@ -101,21 +102,54 @@ export async function GET(request: Request) {
       and(eq(videoAnalytics.videoId, videos.id), gte(videoAnalytics.snapshotDate, startDate))
     )
     .where(and(eq(videos.organizationId, member.orgDbId), isNotNull(videos.ytVideoId)))
-    .groupBy(videos.id, videos.title, videos.ytUrl, videos.ytViewCount, videos.ytLikeCount, videos.ytCommentCount)
+    .groupBy(videos.id, videos.channelId, videos.title, videos.ytUrl, videos.ytViewCount, videos.ytLikeCount, videos.ytCommentCount)
     .orderBy(
       sql`greatest(coalesce(${videos.ytViewCount}, 0), coalesce(sum(${videoAnalytics.views}), 0)) desc`
     )
-    .limit(10)
 
-  const topVideos = topVideosRaw.map((v) => ({
-    videoId: v.videoId,
-    title: v.title,
-    ytUrl: v.ytUrl,
+  const fastViewsByVideo = topVideosRaw.map((v) => ({
+    ...v,
     views: Math.max(v.ytViewCount ?? 0, v.analyticsViews),
-    watchTimeMin: v.watchTimeMin,
     likes: Math.max(v.ytLikeCount ?? 0, v.analyticsLikes),
     comments: Math.max(v.ytCommentCount ?? 0, v.analyticsComments),
   }))
+
+  const topVideos = fastViewsByVideo.slice(0, 10).map((v) => ({
+    videoId: v.videoId,
+    title: v.title,
+    ytUrl: v.ytUrl,
+    views: v.views,
+    watchTimeMin: v.watchTimeMin,
+    likes: v.likes,
+    comments: v.comments,
+  }))
+
+  // The fast per-video counter (videos.ytViewCount) and the Analytics API
+  // rollup (channelAnalytics/daily) are two different data sources with
+  // different latency - without reconciling them, Total Views/Views by
+  // Channel could show 0 while Top Videos (which already takes the max of
+  // both) shows real numbers for the same data.
+  const fastViewsTotal = fastViewsByVideo.reduce((sum, v) => sum + v.views, 0)
+  const fastViewsByChannel = new Map<string, number>()
+  for (const v of fastViewsByVideo) {
+    fastViewsByChannel.set(v.channelId, (fastViewsByChannel.get(v.channelId) ?? 0) + v.views)
+  }
+
+  totals.views = Math.max(totals.views, fastViewsTotal)
+
+  for (const ch of channelBreakdown) {
+    ch.views = Math.max(ch.views, fastViewsByChannel.get(ch.id) ?? 0)
+  }
+
+  if (daily.length === 0 && fastViewsTotal > 0) {
+    daily.push({
+      date: format(new Date(), 'yyyy-MM-dd'),
+      views: fastViewsTotal,
+      watchTimeMin: 0,
+      subscriberChange: 0,
+      revenueUsd: 0,
+    })
+  }
 
   return NextResponse.json({
     daily,
