@@ -55,15 +55,15 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://clerk.accounts.dev https://*.clerk.accounts.dev https://js.stripe.com",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://clerk.accounts.dev https://*.clerk.accounts.dev https://js.stripe.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https:",
               // Supabase realtime, Clerk WS, Upstash, AI APIs, ElevenLabs
-              "connect-src 'self' https://api.clerk.com wss://ws.clerk.com https://*.clerk.accounts.dev https://*.supabase.co wss://*.supabase.co https://*.upstash.io https://api.openai.com https://api.anthropic.com https://api.elevenlabs.io https://api.runwayml.com",
+              "connect-src 'self' https://api.clerk.com wss://ws.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://*.supabase.co wss://*.supabase.co https://*.upstash.io https://api.openai.com https://api.anthropic.com https://api.elevenlabs.io https://api.runwayml.com",
               "media-src 'self' blob: https://res.cloudinary.com",
               // Stripe iframes for payment elements
-              "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://*.clerk.accounts.dev",
+              "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
               // TipTap editor uses blob workers
               "worker-src 'self' blob:",
             ].join('; '),
