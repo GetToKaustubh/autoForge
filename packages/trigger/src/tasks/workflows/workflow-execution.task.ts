@@ -11,13 +11,122 @@ export const workflowExecutionTask = task({
   id: 'workflow-execution',
   maxDuration: 3600,
 
-  run: async (payload: { workflowRunId: string; workflowId: string; orgDbId: string }) => {
-    const { workflowRunId, workflowId, orgDbId } = payload
+  run: async (payload: { workflowRunId: string; workflowId: string; orgDbId: string; userDbId?: string }) => {
+    const { workflowRunId, workflowId, orgDbId, userDbId } = payload
     logger.info(`Starting workflow execution`, { workflowRunId, workflowId })
 
     const { db } = await import('../../lib/db')
-    const { workflows, workflowRuns } = await import('../../lib/db/schema')
+    const {
+      workflows, workflowRuns, nicheResearch, keywordResearch, trends,
+      scripts, voiceGenerations, thumbnails, seoOptimizations,
+    } = await import('../../lib/db/schema')
     const { eq } = await import('drizzle-orm')
+
+    // Most task types expect a placeholder row to already exist (created by
+    // their normal API route, which does insert-then-trigger) and UPDATE it
+    // by id rather than creating one - calling tasks.trigger directly on the
+    // raw task type skips that insert entirely, so these would otherwise
+    // fail immediately on "no such row". Mirror each route's insert here.
+    async function preparePayload(step: WorkflowStep): Promise<Record<string, unknown>> {
+      const base = { ...step.config, organizationId: orgDbId, userId: userDbId, workflowRunId }
+      switch (step.type) {
+        case 'niche-research': {
+          const [row] = await db
+            .insert(nicheResearch)
+            .values({
+              organizationId: orgDbId,
+              channelId: (step.config.channelId as string) ?? null,
+              createdBy: userDbId,
+              query: step.config.query as string,
+              modelUsed: 'gemini-flash-lite-latest',
+              status: 'pending',
+            })
+            .returning({ id: nicheResearch.id })
+          return { ...base, researchId: row!.id }
+        }
+        case 'keyword-research': {
+          const [row] = await db
+            .insert(keywordResearch)
+            .values({
+              organizationId: orgDbId,
+              channelId: (step.config.channelId as string) ?? null,
+              seedKeyword: step.config.seedKeyword as string,
+              source: 'ai',
+            })
+            .returning({ id: keywordResearch.id })
+          return { ...base, researchId: row!.id }
+        }
+        case 'trend-discovery': {
+          const [row] = await db
+            .insert(trends)
+            .values({
+              organizationId: orgDbId,
+              channelId: (step.config.channelId as string) ?? null,
+              topic: step.config.topic as string,
+              source: 'ai',
+            })
+            .returning({ id: trends.id })
+          return { ...base, trendId: row!.id }
+        }
+        case 'script-generation': {
+          const [row] = await db
+            .insert(scripts)
+            .values({
+              organizationId: orgDbId,
+              channelId: step.config.channelId as string,
+              ideaId: step.config.ideaId as string,
+              createdBy: userDbId,
+              title: (step.config.title as string) || 'Untitled',
+              status: 'draft',
+            })
+            .returning({ id: scripts.id })
+          return { ...base, scriptId: row!.id }
+        }
+        case 'voice-generation': {
+          const [row] = await db
+            .insert(voiceGenerations)
+            .values({
+              organizationId: orgDbId,
+              scriptId: step.config.scriptId as string,
+              createdBy: userDbId,
+              voiceId: step.config.voiceId as string,
+              voiceName: step.config.voiceId as string,
+              voiceSettings: {},
+              status: 'pending',
+            })
+            .returning({ id: voiceGenerations.id })
+          return { ...base, voiceGenId: row!.id }
+        }
+        case 'thumbnail-generation': {
+          const [row] = await db
+            .insert(thumbnails)
+            .values({
+              organizationId: orgDbId,
+              channelId: step.config.channelId as string,
+              ideaId: (step.config.ideaId as string) || null,
+              createdBy: userDbId,
+              prompt: (step.config.thumbnailConcept as string) || (step.config.videoTitle as string),
+              style: 'bold',
+              status: 'pending',
+            })
+            .returning({ id: thumbnails.id })
+          return { ...base, thumbnailId: row!.id }
+        }
+        case 'seo-optimization': {
+          const [row] = await db
+            .insert(seoOptimizations)
+            .values({ organizationId: orgDbId, videoId: step.config.videoId as string })
+            .onConflictDoUpdate({
+              target: seoOptimizations.videoId,
+              set: { updatedAt: new Date() },
+            })
+            .returning({ id: seoOptimizations.id })
+          return { ...base, seoId: row!.id }
+        }
+        default:
+          return base
+      }
+    }
 
     const [wf] = await db
       .select({ steps: workflows.steps })
@@ -40,11 +149,8 @@ export const workflowExecutionTask = task({
       logger.info(`Executing step`, { stepId: step.id, type: step.type })
 
       try {
-        const handle = await tasks.trigger(step.type, {
-          ...step.config,
-          organizationId: orgDbId,
-          workflowRunId,
-        })
+        const stepPayload = await preparePayload(step)
+        const handle = await tasks.trigger(step.type, stepPayload)
 
         stepResults[step.id] = { status: 'triggered', jobId: handle.id }
 

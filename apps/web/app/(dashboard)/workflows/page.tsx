@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -15,6 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Plus, Zap, Play, Trash2, Settings, Clock, ChevronRight } from 'lucide-react'
+import { useActiveChannel } from '@/hooks/use-channel'
 
 interface WorkflowStep {
   id: string
@@ -63,6 +64,112 @@ const TRIGGER_BADGE: Record<string, string> = {
   on_script_approved: 'bg-indigo-100 text-indigo-800',
 }
 
+// Per-step config fields, matching each Trigger.dev task's required payload
+// (minus organizationId/userId/workflowRunId, which workflow-execution injects
+// automatically). Fields named *Id expect a UUID from a prior step's output —
+// there's no auto-chaining between steps yet, so these must be filled in by
+// hand for now.
+type FieldSpec = { key: string; label: string; kind: 'text' | 'textarea' | 'number' | 'channel'; placeholder?: string }
+
+const STEP_CONFIG_FIELDS: Record<string, FieldSpec[]> = {
+  'niche-research': [{ key: 'query', label: 'Niche / Topic', kind: 'text', placeholder: 'e.g. stoic philosophy' }],
+  'keyword-research': [
+    { key: 'seedKeyword', label: 'Seed Keyword', kind: 'text', placeholder: 'e.g. morning routine' },
+    { key: 'niche', label: 'Niche (optional)', kind: 'text' },
+  ],
+  'trend-discovery': [
+    { key: 'topic', label: 'Topic', kind: 'text', placeholder: 'e.g. productivity' },
+    { key: 'niche', label: 'Niche (optional)', kind: 'text' },
+  ],
+  'idea-generation': [
+    { key: 'channelId', label: 'Channel', kind: 'channel' },
+    { key: 'niche', label: 'Niche / Topic', kind: 'text', placeholder: 'e.g. stoic philosophy' },
+    { key: 'count', label: 'Number of ideas (optional)', kind: 'number' },
+  ],
+  'script-generation': [
+    { key: 'channelId', label: 'Channel', kind: 'channel' },
+    { key: 'ideaId', label: 'Idea ID', kind: 'text', placeholder: 'UUID from a prior Idea Generation step' },
+    { key: 'title', label: 'Title (optional)', kind: 'text' },
+    { key: 'targetDurationSec', label: 'Target duration, seconds (optional)', kind: 'number' },
+  ],
+  'voice-generation': [
+    { key: 'scriptId', label: 'Script ID', kind: 'text', placeholder: 'UUID from a prior Script Generation step' },
+    { key: 'voiceId', label: 'Voice', kind: 'text', placeholder: 'e.g. en-US-GuyNeural' },
+  ],
+  'thumbnail-generation': [
+    { key: 'channelId', label: 'Channel', kind: 'channel' },
+    { key: 'videoTitle', label: 'Video Title', kind: 'text' },
+    { key: 'ideaId', label: 'Idea ID (optional)', kind: 'text' },
+    { key: 'thumbnailConcept', label: 'Concept (optional)', kind: 'textarea' },
+  ],
+  'video-generation': [
+    { key: 'videoId', label: 'Video ID', kind: 'text', placeholder: 'UUID of an existing video record with scenes set' },
+    { key: 'channelId', label: 'Channel', kind: 'channel' },
+  ],
+  'seo-optimization': [
+    { key: 'videoId', label: 'Video ID', kind: 'text', placeholder: 'UUID of an existing video record' },
+    { key: 'currentTitle', label: 'Current Title', kind: 'text' },
+  ],
+  'youtube-upload': [
+    { key: 'videoId', label: 'Video ID', kind: 'text', placeholder: 'UUID of a rendered video ready to upload' },
+    { key: 'channelId', label: 'Channel', kind: 'channel' },
+  ],
+  'send-notification': [
+    { key: 'to', label: 'Recipient', kind: 'text', placeholder: 'email or user id' },
+    { key: 'type', label: 'Type', kind: 'text', placeholder: 'e.g. pipeline_complete' },
+  ],
+}
+
+function StepConfigFields({ step, onChange }: { step: WorkflowStep; onChange: (config: Record<string, unknown>) => void }) {
+  const activeChannel = useActiveChannel()
+  const fields = STEP_CONFIG_FIELDS[step.type] ?? []
+  const setField = (key: string, value: unknown) => onChange({ ...step.config, [key]: value })
+
+  useEffect(() => {
+    const channelField = fields.find((f) => f.kind === 'channel')
+    if (channelField && activeChannel && !step.config[channelField.key]) {
+      setField(channelField.key, activeChannel.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.type, activeChannel?.id])
+
+  if (fields.length === 0) return null
+
+  return (
+    <div className="ml-6 space-y-2 border-l pl-3">
+      {fields.map((f) => (
+        <div key={f.key} className="space-y-1">
+          <label className="text-xs text-muted-foreground">{f.label}</label>
+          {f.kind === 'channel' ? (
+            <Input
+              value={(step.config[f.key] as string) ?? activeChannel?.id ?? ''}
+              onChange={(e) => setField(f.key, e.target.value)}
+              placeholder={activeChannel ? `${activeChannel.channelName} (${activeChannel.id})` : 'Channel UUID'}
+              className="h-8 text-sm"
+            />
+          ) : f.kind === 'textarea' ? (
+            <textarea
+              value={(step.config[f.key] as string) ?? ''}
+              onChange={(e) => setField(f.key, e.target.value)}
+              placeholder={f.placeholder}
+              className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              rows={2}
+            />
+          ) : (
+            <Input
+              type={f.kind === 'number' ? 'number' : 'text'}
+              value={(step.config[f.key] as string | number) ?? ''}
+              onChange={(e) => setField(f.key, f.kind === 'number' ? Number(e.target.value) : e.target.value)}
+              placeholder={f.placeholder}
+              className="h-8 text-sm"
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function newStep(): WorkflowStep {
   const type = 'idea-generation'
   return { id: crypto.randomUUID(), type, label: STEP_TYPES.find((t) => t.value === type)!.label, config: {} }
@@ -98,7 +205,9 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
   const addStep = () => setSteps((s) => [...s, newStep()])
   const removeStep = (id: string) => setSteps((s) => s.filter((x) => x.id !== id))
   const updateStep = (id: string, type: string) =>
-    setSteps((s) => s.map((x) => x.id === id ? { ...x, type, label: STEP_TYPES.find((t) => t.value === type)?.label ?? type } : x))
+    setSteps((s) => s.map((x) => x.id === id ? { ...x, type, label: STEP_TYPES.find((t) => t.value === type)?.label ?? type, config: {} } : x))
+  const updateStepConfig = (id: string, config: Record<string, unknown>) =>
+    setSteps((s) => s.map((x) => x.id === id ? { ...x, config } : x))
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -134,20 +243,23 @@ function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void })
               </Button>
             </div>
             {steps.map((step, i) => (
-              <div key={step.id} className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-4">{i + 1}.</span>
-                <Select value={step.type} onValueChange={(v) => updateStep(step.id, v)}>
-                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {STEP_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeStep(step.id)}
-                  disabled={steps.length === 1}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+              <div key={step.id} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-4">{i + 1}.</span>
+                  <Select value={step.type} onValueChange={(v) => updateStep(step.id, v)}>
+                    <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STEP_TYPES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeStep(step.id)}
+                    disabled={steps.length === 1}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <StepConfigFields step={step} onChange={(config) => updateStepConfig(step.id, config)} />
               </div>
             ))}
           </div>

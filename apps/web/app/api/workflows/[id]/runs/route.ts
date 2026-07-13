@@ -69,6 +69,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     workflowRunId: run.id,
     workflowId: wf.id,
     orgDbId: member.orgDbId,
+    userDbId: member.userDbId,
   })
 
   // Update run with job ID
