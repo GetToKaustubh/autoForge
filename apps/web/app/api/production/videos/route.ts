@@ -18,7 +18,10 @@ const createVideoSchema = z.object({
   // If scenes provided, immediately start video generation
   scenes: z.array(z.object({
     scene_index: z.number().int(),
-    prompt: z.string().min(5).max(500),
+    // Runway/Pika accept detailed cinematic prompts well past a tweet's
+    // length - 500 was rejecting real-world scene descriptions (confirmed
+    // live: a batch of 13 cinematic prompts, 8 of them 500-627 chars).
+    prompt: z.string().min(5).max(2000),
     duration_sec: z.number().default(5),
     reference_image_url: z.string().url().optional(),
   })).optional(),
