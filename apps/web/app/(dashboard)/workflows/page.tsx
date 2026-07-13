@@ -64,7 +64,8 @@ const TRIGGER_BADGE: Record<string, string> = {
 }
 
 function newStep(): WorkflowStep {
-  return { id: crypto.randomUUID(), type: 'idea-generation', label: '', config: {} }
+  const type = 'idea-generation'
+  return { id: crypto.randomUUID(), type, label: STEP_TYPES.find((t) => t.value === type)!.label, config: {} }
 }
 
 function CreateDialog({ open, onClose }: { open: boolean; onClose: () => void }) {

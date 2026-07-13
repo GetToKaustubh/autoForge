@@ -137,7 +137,7 @@ export default function WorkflowDetailPage({ params }: { params: Promise<{ workf
                 {i > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                 <div className="rounded-lg border px-3 py-2 text-sm">
                   <span className="text-xs text-muted-foreground">{i + 1}.</span>{' '}
-                  {step.label ?? step.type}
+                  {step.label || step.type}
                 </div>
               </div>
             ))}
@@ -194,7 +194,7 @@ export default function WorkflowDetailPage({ params }: { params: Promise<{ workf
                             className={`text-xs px-2 py-0.5 rounded-full font-medium ${STEP_STATUS_COLOR[result.status] ?? 'bg-muted text-muted-foreground'}`}
                             title={result.error ?? undefined}
                           >
-                            {step.label ?? step.type}: {result.status}
+                            {step.label || step.type}: {result.status}
                           </span>
                         )
                       })}

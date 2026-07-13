@@ -70,7 +70,7 @@ export const workflowExecutionTask = task({
             .set({
               status: 'failed',
               stepResults,
-              error: `Step "${step.label ?? step.type}" failed`,
+              error: `Step "${step.label || step.type}" failed`,
               completedAt: new Date(),
             })
             .where(eq(workflowRuns.id, workflowRunId))
@@ -92,7 +92,7 @@ export const workflowExecutionTask = task({
           .set({
             status: 'failed',
             stepResults,
-            error: `Step "${step.label ?? step.type}" threw: ${String(err)}`,
+            error: `Step "${step.label || step.type}" threw: ${String(err)}`,
             completedAt: new Date(),
           })
           .where(eq(workflowRuns.id, workflowRunId))
