@@ -26,7 +26,7 @@ export const youtubeUploadTask = task({
     )
     const { eq } = await import('drizzle-orm')
     const { getValidAccessToken } = await import('../../lib/auth/youtube-oauth')
-    const { checkAndDeductQuota } = await import('../../lib/utils/quota')
+    const { checkAndDeductQuota, refundQuota } = await import('../../lib/utils/quota')
 
     // Fetch video + channel
     const [video] = await db.select().from(videos).where(eq(videos.id, payload.videoId)).limit(1)
@@ -51,6 +51,20 @@ export const youtubeUploadTask = task({
       )
     }
 
+    // Quota above is deducted on the pre-check so we don't attempt uploads
+    // we know will exceed the daily cap. If anything below throws, refund
+    // it — "quota used" should mean quota actually spent on YouTube, not
+    // quota attempted (OAuth/fetch failures were burning quota with no
+    // upload ever reaching YouTube's API).
+    try {
+      return await uploadVideo()
+    } catch (err) {
+      logger.info(`YouTube upload failed for ${payload.videoId}, refunding quota`)
+      await refundQuota(payload.channelId, 'videos.insert')
+      throw err
+    }
+
+    async function uploadVideo() {
     // Get valid (refreshed if needed) access token
     const accessToken = await getValidAccessToken(payload.channelId)
 
@@ -176,5 +190,6 @@ export const youtubeUploadTask = task({
 
     logger.info(`YouTube upload completed for ${payload.videoId}: ytVideoId=${ytVideoId}`)
     return { ytVideoId, ytUrl: `https://www.youtube.com/watch?v=${ytVideoId}` }
+    }
   },
 })

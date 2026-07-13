@@ -72,6 +72,25 @@ export async function checkAndDeductQuota(
   return { allowed: true, remainingQuota: remaining, cost }
 }
 
+/**
+ * Refunds previously-deducted quota after a checkAndDeductQuota succeeded
+ * but the actual API call then failed (e.g. upload errored after the
+ * pre-check passed). Keeps "quota used" meaning "quota actually spent
+ * on YouTube", not "quota attempted".
+ */
+export async function refundQuota(channelId: string, operation: YouTubeOperation): Promise<void> {
+  const cost = QUOTA_COSTS[operation]
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const key = `quota:${channelId}:${today}`
+
+  await redis.incrby(key, cost)
+
+  await db
+    .update(youtubeChannels)
+    .set({ quotaUsedToday: sql`GREATEST(quota_used_today - ${cost}, 0)` })
+    .where(eq(youtubeChannels.id, channelId))
+}
+
 export function todayPacificDate(): string {
   // YouTube quota resets at midnight Pacific Time
   return new Date()
