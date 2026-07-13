@@ -130,7 +130,7 @@ export function ChannelCard({ channel }: { channel: Channel }) {
 
       <CardFooter className="gap-2 pt-0">
         <Button variant="outline" size="sm" asChild onClick={(e) => e.stopPropagation()}>
-          <Link href={`/channels/${channel.id}/analytics`}>
+          <Link href={`/analytics?channelId=${channel.id}`}>
             <BarChart2 className="mr-1.5 h-3.5 w-3.5" />
             Analytics
           </Link>
