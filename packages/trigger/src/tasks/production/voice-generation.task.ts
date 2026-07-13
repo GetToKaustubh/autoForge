@@ -45,6 +45,22 @@ export const voiceGenerationTask = task({
       .set({ status: 'processing' })
       .where(eq(voiceGenerations.id, payload.voiceGenId))
 
+    try {
+      return await runGeneration()
+    } catch (err) {
+      // Edge TTS's WebSocket drops mid-stream often enough that this needs
+      // handling, not just retrying blind - without this, a failed run left
+      // the row stuck at status 'processing' forever (set above, never
+      // updated again on the failure path), so the UI just spun eternally
+      // with no indication anything had gone wrong.
+      await db
+        .update(voiceGenerations)
+        .set({ status: 'failed', errorMessage: err instanceof Error ? err.message : String(err) })
+        .where(eq(voiceGenerations.id, payload.voiceGenId))
+      throw err
+    }
+
+    async function runGeneration() {
     // Fetch script sections
     const [script] = await db
       .select({ sections: scripts.sections })
@@ -194,5 +210,6 @@ export const voiceGenerationTask = task({
 
     logger.info(`Voice generation ${payload.voiceGenId} completed: ${totalChars} chars, ${totalDurationSec}s`)
     return { voiceGenId: payload.voiceGenId, totalChars, totalDurationSec, sections: sectionResults.length }
+    }
   },
 })
