@@ -35,7 +35,13 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const parsed = createVideoSchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
+    // flatten() only surfaces top-level field errors - nested issues like
+    // scenes[2].prompt (e.g. a manually-typed scene line under 5 chars)
+    // don't show up in it at all, so the client only ever saw a bare
+    // "Invalid request" with no way to tell which line was the problem.
+    const firstIssue = parsed.error.issues[0]
+    const detail = firstIssue ? `${firstIssue.path.join('.')}: ${firstIssue.message}` : 'Invalid request'
+    return NextResponse.json({ error: detail, details: parsed.error.flatten() }, { status: 400 })
   }
 
   const member = await getOrgMember(orgId, userId)

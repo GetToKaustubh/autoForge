@@ -241,6 +241,22 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
         .filter((l) => l.trim())
         .map((prompt, i) => ({ scene_index: i, prompt: prompt.trim(), duration_sec: 5 }))
 
+      // Same rule the API enforces (prompt 5-500 chars) - check here first so
+      // a short manually-typed line fails with a message naming the exact
+      // line, instead of a round-trip to a generic "Invalid request".
+      if (!autoScenes) {
+        const tooShort = scenes.find((s) => s.prompt.length < 5)
+        if (tooShort) {
+          throw new Error(
+            `Scene ${tooShort.scene_index + 1} is too short: "${tooShort.prompt}" (need at least 5 characters)`
+          )
+        }
+        const tooLong = scenes.find((s) => s.prompt.length > 500)
+        if (tooLong) {
+          throw new Error(`Scene ${tooLong.scene_index + 1} is too long (max 500 characters)`)
+        }
+      }
+
       const res = await fetch('/api/production/videos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -351,7 +367,9 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
                 rows={5}
                 className="font-mono text-sm"
               />
-              <p className="text-xs text-muted-foreground">Each line = 1 scene (5 seconds). Leave empty to add scenes later.</p>
+              <p className="text-xs text-muted-foreground">
+                Each line = 1 scene (5 seconds), 5-500 characters per line. Leave empty to add scenes later.
+              </p>
             </div>
           )}
 
