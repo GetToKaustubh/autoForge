@@ -13,8 +13,9 @@ export const analyticsSyncTask = schedules.task({
     const { db } = await import('../../lib/db')
     const { youtubeChannels, organizations, videoAnalytics, channelAnalytics, videos } =
       await import('../../lib/db/schema')
-    const { eq, isNull, and } = await import('drizzle-orm')
+    const { eq, isNull, and, inArray } = await import('drizzle-orm')
     const { getValidAccessToken } = await import('../../lib/auth/youtube-oauth')
+    const { checkAndDeductQuota } = await import('../../lib/utils/quota')
 
     const activeChannels = await db
       .select({
@@ -79,6 +80,120 @@ export const analyticsSyncTask = schedules.task({
                     totalRevenueUsd: (revenue ?? 0).toString(),
                   },
                 })
+            }
+          }
+        }
+
+        // Fetch per-video analytics so we can show top-performing videos,
+        // not just channel-wide totals (videoAnalytics table existed but
+        // nothing ever wrote to it).
+        const videoReportUrl = new URL('https://youtubeanalytics.googleapis.com/v2/reports')
+        videoReportUrl.searchParams.set('ids', `channel==${channel.ytChannelId}`)
+        videoReportUrl.searchParams.set('startDate', startDate)
+        videoReportUrl.searchParams.set('endDate', endDate)
+        videoReportUrl.searchParams.set(
+          'metrics',
+          'views,estimatedMinutesWatched,likes,comments,shares,subscribersGained,subscribersLost'
+        )
+        videoReportUrl.searchParams.set('dimensions', 'video')
+        videoReportUrl.searchParams.set('sort', '-views')
+        videoReportUrl.searchParams.set('maxResults', '50')
+
+        const videoReport = await fetch(videoReportUrl.toString(), {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+
+        if (videoReport.ok) {
+          const vdata = (await videoReport.json()) as {
+            rows?: Array<[string, number, number, number, number, number, number, number]>
+          }
+          if (vdata.rows?.length) {
+            const ytVideoIds = vdata.rows.map((r) => r[0])
+            const ourVideos = await db
+              .select({ id: videos.id, ytVideoId: videos.ytVideoId })
+              .from(videos)
+              .where(inArray(videos.ytVideoId, ytVideoIds))
+            const videoIdMap = new Map(ourVideos.map((v) => [v.ytVideoId, v.id]))
+
+            for (const row of vdata.rows) {
+              const [ytVideoId, views, watchMin, likes, comments, shares, subsGained, subsLost] = row
+              const internalVideoId = videoIdMap.get(ytVideoId)
+              if (!internalVideoId) continue // not one of our uploads (or record deleted)
+
+              await db
+                .insert(videoAnalytics)
+                .values({
+                  organizationId: channel.organizationId,
+                  channelId: channel.id,
+                  videoId: internalVideoId,
+                  ytVideoId,
+                  snapshotDate: endDate,
+                  views: views ?? 0,
+                  watchTimeMin: watchMin ?? 0,
+                  likes: likes ?? 0,
+                  comments: comments ?? 0,
+                  shares: shares ?? 0,
+                  subscribersGained: subsGained ?? 0,
+                  subscribersLost: subsLost ?? 0,
+                })
+                .onConflictDoUpdate({
+                  target: [videoAnalytics.videoId, videoAnalytics.snapshotDate],
+                  set: {
+                    views: views ?? 0,
+                    watchTimeMin: watchMin ?? 0,
+                    likes: likes ?? 0,
+                    comments: comments ?? 0,
+                    shares: shares ?? 0,
+                    subscribersGained: subsGained ?? 0,
+                    subscribersLost: subsLost ?? 0,
+                  },
+                })
+            }
+          }
+        }
+
+        // Fast public counters (near-real-time) via the Data API, separate
+        // from the Analytics API above which can take 24-72h to reflect a
+        // fresh upload.
+        const channelVideos = await db
+          .select({ id: videos.id, ytVideoId: videos.ytVideoId })
+          .from(videos)
+          .where(and(eq(videos.channelId, channel.id), isNull(videos.deletedAt)))
+
+        const trackedVideos = channelVideos.filter(
+          (v): v is { id: string; ytVideoId: string } => !!v.ytVideoId
+        )
+
+        if (trackedVideos.length > 0) {
+          const { allowed } = await checkAndDeductQuota(channel.id, 'videos.list')
+          if (allowed) {
+            const statsUrl = new URL('https://www.googleapis.com/youtube/v3/videos')
+            statsUrl.searchParams.set('part', 'statistics')
+            statsUrl.searchParams.set('id', trackedVideos.map((v) => v.ytVideoId).join(','))
+
+            const statsRes = await fetch(statsUrl.toString(), {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+
+            if (statsRes.ok) {
+              const statsData = (await statsRes.json()) as {
+                items: Array<{ id: string; statistics: { viewCount?: string; likeCount?: string; commentCount?: string } }>
+              }
+              const statsByYtId = new Map(statsData.items.map((item) => [item.id, item.statistics]))
+
+              for (const v of trackedVideos) {
+                const stats = statsByYtId.get(v.ytVideoId)
+                if (!stats) continue
+                await db
+                  .update(videos)
+                  .set({
+                    ytViewCount: stats.viewCount ? parseInt(stats.viewCount) : undefined,
+                    ytLikeCount: stats.likeCount ? parseInt(stats.likeCount) : undefined,
+                    ytCommentCount: stats.commentCount ? parseInt(stats.commentCount) : undefined,
+                    ytStatsSyncedAt: new Date(),
+                  })
+                  .where(eq(videos.id, v.id))
+              }
             }
           }
         }

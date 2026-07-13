@@ -144,6 +144,13 @@ export const videos = pgTable('videos', {
   // Post-upload YouTube data
   ytVideoId: text('yt_video_id'),
   ytUrl: text('yt_url'),
+  // Fast public counters from videos.list (near-real-time, unlike the
+  // YouTube Analytics API which has a 24-72h processing delay before
+  // any data appears in reports).
+  ytViewCount: bigint('yt_view_count', { mode: 'number' }),
+  ytLikeCount: integer('yt_like_count'),
+  ytCommentCount: integer('yt_comment_count'),
+  ytStatsSyncedAt: timestamp('yt_stats_synced_at', { withTimezone: true }),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
   publishedAt: timestamp('published_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

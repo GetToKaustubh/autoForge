@@ -29,10 +29,21 @@ interface ChannelBreakdown {
   revenueUsd: number
 }
 
+interface TopVideo {
+  videoId: string
+  title: string
+  ytUrl: string | null
+  views: number
+  watchTimeMin: number
+  likes: number
+  comments: number
+}
+
 interface AnalyticsData {
   daily: DailyPoint[]
   totals: { views: number; watchTimeMin: number; subscriberChange: number; revenueUsd: number }
   channels: ChannelBreakdown[]
+  topVideos: TopVideo[]
   days: number
   hasData: boolean
 }
@@ -200,6 +211,44 @@ export function AnalyticsOverview({ days: defaultDays = 30 }: { days?: number })
                     <Bar dataKey="views" fill="#6366f1" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Top Videos */}
+          {(data.topVideos?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Top Videos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y">
+                  {data.topVideos.map((v) => (
+                    <div key={v.videoId} className="flex items-center justify-between py-3 gap-4">
+                      <div className="min-w-0">
+                        {v.ytUrl ? (
+                          <a
+                            href={v.ytUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-medium truncate block hover:underline"
+                          >
+                            {v.title}
+                          </a>
+                        ) : (
+                          <p className="text-sm font-medium truncate">{v.title}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {fmtNum(v.likes)} likes · {fmtNum(v.comments)} comments
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold">{fmtNum(v.views)} views</p>
+                        <p className="text-xs text-muted-foreground">{fmtHours(v.watchTimeMin)} watched</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
