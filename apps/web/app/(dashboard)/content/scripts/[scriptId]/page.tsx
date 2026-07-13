@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import {
-  ArrowLeft, Save, CheckCircle, Clock, FileText, Loader2, Send
+  ArrowLeft, Save, CheckCircle, Clock, FileText, Loader2, Send, RefreshCw
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -156,6 +156,21 @@ export default function ScriptEditorPage({ params }: { params: Promise<{ scriptI
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['script', scriptId] }),
   })
 
+  const { mutate: regenerate, isPending: isRegenerating } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/content/scripts/${scriptId}/regenerate`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(err.error ?? 'Failed to regenerate')
+      }
+      return res.json() as Promise<Script>
+    },
+    onSuccess: (updated) => {
+      setActiveSection(0)
+      void queryClient.setQueryData(['script', scriptId], updated)
+    },
+  })
+
   if (isLoading) {
     return (
       <div className="space-y-4 max-w-4xl">
@@ -196,6 +211,23 @@ export default function ScriptEditorPage({ params }: { params: Promise<{ scriptI
             <span className="text-sm text-muted-foreground hidden sm:block">
               {script.wordCount.toLocaleString()} words · {formatDuration(script.estimatedDurationSec)}
             </span>
+          )}
+          {script.ideaId && !isGenerating && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm('Regenerate this script? Current content will be replaced.')) regenerate()
+              }}
+              disabled={isRegenerating}
+            >
+              {isRegenerating ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Regenerate
+            </Button>
           )}
           {script.status === 'draft' && sections.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => submitReview()} disabled={isSubmitting}>
