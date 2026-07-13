@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Youtube, Settings, BarChart2, AlertTriangle, CheckCircle } from 'lucide-react'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +32,7 @@ const statusConfig = {
 } as const
 
 export function ChannelCard({ channel }: { channel: Channel }) {
+  const router = useRouter()
   const { activeChannel, setActiveChannel } = useChannelStore()
   const isActive = activeChannel?.id === channel.id
   const quotaPercent = Math.round((channel.quotaUsedToday / channel.quotaLimitDaily) * 100)
@@ -50,7 +52,7 @@ export function ChannelCard({ channel }: { channel: Channel }) {
         'cursor-pointer transition-all hover:shadow-md',
         isActive && 'ring-2 ring-primary ring-offset-2'
       )}
-      onClick={() =>
+      onClick={() => {
         setActiveChannel({
           id: channel.id,
           ytChannelId: channel.ytChannelId,
@@ -62,7 +64,8 @@ export function ChannelCard({ channel }: { channel: Channel }) {
           quotaLimitDaily: channel.quotaLimitDaily,
           status: channel.status,
         })
-      }
+        router.push(`/channels/${channel.id}`)
+      }}
     >
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
