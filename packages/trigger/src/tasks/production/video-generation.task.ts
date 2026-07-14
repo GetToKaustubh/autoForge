@@ -14,8 +14,9 @@ const videoGenerationPayloadSchema = z.object({
   organizationId: z.string().uuid(),
   channelId: z.string().uuid(),
   scenes: z.array(sceneSchema).min(1).max(30),
-  provider: z.enum(['stock', 'runway', 'pika']).default('stock'),
+  provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
   model: z.enum(['gen3a_turbo', 'gen4_turbo']).default('gen3a_turbo'),
+  aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),
 })
 
 export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>
@@ -69,6 +70,9 @@ export const videoGenerationTask = task({
         if (payload.provider === 'stock') {
           videoUrl = await generateWithStockFootage(scene, cloudinary)
           // Pexels is free — cost stays 0
+        } else if (payload.provider === 'ai-image') {
+          videoUrl = await generateWithAIImage(scene, cloudinary, payload.aspectRatio)
+          // Pollinations is free — cost stays 0
         } else if (payload.provider === 'runway') {
           videoUrl = await generateWithRunway(scene)
           totalCostUsd += estimateRunwayCost(scene.duration_sec)
@@ -87,12 +91,13 @@ export const videoGenerationTask = task({
         // far longer than the scene's intended duration_sec, which otherwise makes
         // the final concatenated video much longer than the pipeline's own duration
         // estimate (sum of duration_sec) implies.
+        const [normWidth, normHeight] = payload.aspectRatio === '9:16' ? [1080, 1920] : [1920, 1080]
         const uploadResult = await cloudinary.uploader.upload(videoUrl, {
           resource_type: 'video',
           folder,
           public_id: publicId,
           format: 'mp4',
-          transformation: [{ width: 1920, height: 1080, crop: 'fill', duration: scene.duration_sec }],
+          transformation: [{ width: normWidth, height: normHeight, crop: 'fill', duration: scene.duration_sec }],
         })
 
         sceneResults.push({
@@ -140,10 +145,10 @@ export const videoGenerationTask = task({
       .set({ pipelineStage: 'scenes_ready', scenes: sceneResults })
       .where(eq(videos.id, payload.videoId))
 
-    // api_service enum has no 'stock' value (Pexels, would need a migration) — reuse 'cloudinary' as closest label
+    // api_service enum has no 'stock'/'ai-image' value (Pexels/Pollinations, would need a migration) — reuse 'cloudinary' as closest label
     await db.insert(apiUsage).values({
       organizationId: payload.organizationId,
-      service: payload.provider === 'stock' ? 'cloudinary' : payload.provider,
+      service: payload.provider === 'stock' || payload.provider === 'ai-image' ? 'cloudinary' : payload.provider,
       endpoint: 'video-generation',
       unitsUsed: String(completedScenes),
       unitType: 'scenes',
@@ -191,6 +196,31 @@ async function generateWithStockFootage(scene: z.infer<typeof sceneSchema>, clou
   if (!photoUrl) throw new Error(`No Pexels video or photo found for prompt: "${scene.prompt}"`)
 
   const imgUpload = await cloudinary.uploader.upload(photoUrl, { resource_type: 'image' })
+  return cloudinary.url(imgUpload.public_id, {
+    resource_type: 'image',
+    transformation: [{ effect: `zoompan:maxzoom_1.6;du_${Math.max(3, Math.round(scene.duration_sec))}` }],
+    format: 'mp4',
+    secure: true,
+  })
+}
+
+// Free AI image generation via Pollinations.ai (Flux/SDXL, no API key) — same
+// engine already used for thumbnails. Unlike stock footage, this actually
+// renders the scene's own description instead of keyword-matching real-world
+// photos, so a prompt like "ultra-realistic neon coastal city, fictional
+// open-world game" produces something resembling that instead of a random
+// real city photo. Animated with the same Ken Burns zoompan as the stock
+// photo fallback above.
+async function generateWithAIImage(
+  scene: z.infer<typeof sceneSchema>,
+  cloudinary: typeof CloudinaryV2,
+  aspectRatio: '16:9' | '9:16'
+): Promise<string> {
+  const [width, height] = aspectRatio === '9:16' ? [768, 1365] : [1365, 768]
+  const encoded = encodeURIComponent(scene.prompt.slice(0, 2000))
+  const imageUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&seed=${scene.scene_index}&nologo=true&enhance=true`
+
+  const imgUpload = await cloudinary.uploader.upload(imageUrl, { resource_type: 'image' })
   return cloudinary.url(imgUpload.public_id, {
     resource_type: 'image',
     transformation: [{ effect: `zoompan:maxzoom_1.6;du_${Math.max(3, Math.round(scene.duration_sec))}` }],

@@ -207,7 +207,8 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
   const [title, setTitle] = useState('')
   const [scriptId, setScriptId] = useState('')
   const [scenesText, setScenesText] = useState('')
-  const [provider, setProvider] = useState<'stock' | 'runway' | 'pika'>('stock')
+  const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika'>('stock')
+  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9')
   const [autoScenes, setAutoScenes] = useState<Array<{ scene_index: number; prompt: string; duration_sec: number }> | null>(null)
 
   const autoGenMutation = useMutation({
@@ -267,6 +268,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           voiceGenId: linkedVoiceGen?.id,
           scenes: scenes.length > 0 ? scenes : undefined,
           provider,
+          aspectRatio,
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed')
@@ -376,20 +378,38 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           {(scenesText.trim() || autoScenes) && (
             <div className="space-y-2">
               <Label>Video Provider</Label>
-              <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'runway' | 'pika')}>
+              <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="stock">Stock Footage — Pexels (free)</SelectItem>
+                  <SelectItem value="ai-image">AI Images — Pollinations (free)</SelectItem>
                   <SelectItem value="runway">Runway Gen-3 (~$0.25/scene)</SelectItem>
                   <SelectItem value="pika">Pika Labs (~$0.20/scene)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
                 Stock footage matches each scene prompt to free Pexels video/photos — best for
-                quote/facts-style content. Runway/Pika generate original AI video per scene.
+                quote/facts-style content. AI Images generates a free synthetic image per scene from
+                your own prompt (better for fictional/stylized scenes stock can't match) and animates
+                it with a slow zoom/pan. Runway/Pika generate original AI video per scene (paid).
               </p>
+            </div>
+          )}
+
+          {(scenesText.trim() || autoScenes) && (
+            <div className="space-y-2">
+              <Label>Aspect Ratio</Label>
+              <Select value={aspectRatio} onValueChange={(v) => setAspectRatio(v as '16:9' | '9:16')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="16:9">16:9 Landscape</SelectItem>
+                  <SelectItem value="9:16">9:16 Vertical (Shorts)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
 

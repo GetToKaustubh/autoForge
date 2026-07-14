@@ -25,7 +25,8 @@ const createVideoSchema = z.object({
     duration_sec: z.number().default(5),
     reference_image_url: z.string().url().optional(),
   })).optional(),
-  provider: z.enum(['stock', 'runway', 'pika']).default('stock'),
+  provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
+  aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),
 })
 
 export async function POST(req: NextRequest) {
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
       channelId: parsed.data.channelId,
       scenes: parsed.data.scenes,
       provider: parsed.data.provider,
+      aspectRatio: parsed.data.aspectRatio,
     })
 
     const [updated] = await db
