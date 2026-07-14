@@ -22,8 +22,13 @@ const createVideoSchema = z.object({
     // length - 500 was rejecting real-world scene descriptions (confirmed
     // live: a batch of 13 cinematic prompts, 8 of them 500-627 chars).
     prompt: z.string().min(5).max(2000),
-    duration_sec: z.number().default(5),
+    // Server-side bound, not just the frontend timeline editor's own checks -
+    // a bare .default(5) with no min let a zero/negative duration through.
+    duration_sec: z.number().min(1, 'Scene duration must be at least 1 second').max(120, 'Scene duration cannot exceed 120 seconds').default(5),
     reference_image_url: z.string().url().optional(),
+    // Per-scene override of the global provider - 'auto' or omitted falls
+    // back to the video-level provider.
+    visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika']).optional(),
   })).optional(),
   provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
   aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),

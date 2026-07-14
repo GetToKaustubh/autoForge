@@ -7,6 +7,9 @@ const sceneSchema = z.object({
   prompt: z.string(),
   duration_sec: z.number().default(5),
   reference_image_url: z.string().url().optional(),
+  // Per-scene provider override from the timeline editor's Visual Type
+  // selector - 'auto'/omitted falls back to the video-level provider below.
+  visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika']).optional(),
 })
 
 const videoGenerationPayloadSchema = z.object({
@@ -65,15 +68,18 @@ export const videoGenerationTask = task({
       logger.info(`Generating scene ${scene.scene_index + 1}/${payload.scenes.length}`)
 
       try {
+        const effectiveProvider =
+          scene.visual_type && scene.visual_type !== 'auto' ? scene.visual_type : payload.provider
+
         let videoUrl: string
 
-        if (payload.provider === 'stock') {
+        if (effectiveProvider === 'stock') {
           videoUrl = await generateWithStockFootage(scene, cloudinary)
           // Pexels is free — cost stays 0
-        } else if (payload.provider === 'ai-image') {
+        } else if (effectiveProvider === 'ai-image') {
           videoUrl = await generateWithAIImage(scene, cloudinary, payload.aspectRatio)
           // Pollinations is free — cost stays 0
-        } else if (payload.provider === 'runway') {
+        } else if (effectiveProvider === 'runway') {
           videoUrl = await generateWithRunway(scene)
           totalCostUsd += estimateRunwayCost(scene.duration_sec)
         } else {
@@ -110,7 +116,16 @@ export const videoGenerationTask = task({
 
         logger.info(`Scene ${scene.scene_index} completed: ${uploadResult.secure_url}`)
       } catch (err) {
-        const error = err instanceof Error ? err.message : String(err)
+        // Cloudinary's SDK sometimes rejects with a plain {message, http_code}
+        // object instead of an Error instance - String(plainObject) collapses
+        // to the useless "[object Object]", hiding the real reason (confirmed
+        // live: a scene failure gave no usable error at all).
+        const error =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'object' && err !== null
+              ? JSON.stringify(err)
+              : String(err)
         logger.info(`Scene ${scene.scene_index} failed: ${error}`)
         sceneResults.push({
           scene_index: scene.scene_index,

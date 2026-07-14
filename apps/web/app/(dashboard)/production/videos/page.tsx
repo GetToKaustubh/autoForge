@@ -9,9 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { useActiveChannel } from '@/hooks/use-channel'
 import { Video, Plus, Loader2, Play, Clapperboard, CheckCircle, XCircle, AlertCircle, ArrowRight } from 'lucide-react'
+import { SceneTimelineEditor, validateScenes, type EditorScene } from '@/components/production/scene-timeline-editor'
 
 interface VideoItem {
   id: string
@@ -200,63 +200,44 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
   )
 }
 
-function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: string }> }) {
+function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }> }) {
   const queryClient = useQueryClient()
   const activeChannel = useActiveChannel()
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [scriptId, setScriptId] = useState('')
-  const [scenesText, setScenesText] = useState('')
+  const [scenes, setScenes] = useState<EditorScene[]>([])
   const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika'>('stock')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9')
-  const [autoScenes, setAutoScenes] = useState<Array<{ scene_index: number; prompt: string; duration_sec: number }> | null>(null)
-
-  const autoGenMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/production/videos/scenes-from-script', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptId }),
-      })
-      if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to generate scenes')
-      return res.json() as Promise<{ scenes: Array<{ scene_index: number; prompt: string; duration_sec: number }> }>
-    },
-    onSuccess: (data) => setAutoScenes(data.scenes),
-  })
 
   const { data: voiceGensData } = useQuery({
     queryKey: ['voice-for-video', scriptId],
     queryFn: async () => {
       const res = await fetch(`/api/production/voice?scriptId=${scriptId}&limit=10`)
       if (!res.ok) throw new Error('Failed to fetch voice generations')
-      return res.json() as Promise<{ voiceGenerations: Array<{ id: string; status: string }> }>
+      return res.json() as Promise<{ voiceGenerations: Array<{ id: string; status: string; fullAudioUrl: string | null; totalDurationSec: number | null }> }>
     },
     enabled: !!scriptId,
   })
   const linkedVoiceGen = voiceGensData?.voiceGenerations.find((v) => v.status === 'completed')
+  const selectedScript = scripts.find((s) => s.id === scriptId)
+  // Prefer the voice generation's own measured duration (real, from Cloudinary)
+  // over the script's AI-estimated duration when both are available.
+  const narrationDurationSec = linkedVoiceGen?.totalDurationSec ?? selectedScript?.estimatedDurationSec ?? 60
+
+  const validation = validateScenes(scenes, narrationDurationSec)
+  const hasBlockingErrors = scenes.length > 0 && validation.errors.length > 0
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const scenes = autoScenes ?? scenesText
-        .split('\n')
-        .filter((l) => l.trim())
-        .map((prompt, i) => ({ scene_index: i, prompt: prompt.trim(), duration_sec: 5 }))
-
-      // Same rule the API enforces (prompt 5-2000 chars) - check here first so
-      // a bad manually-typed line fails with a message naming the exact
-      // line, instead of a round-trip to a generic "Invalid request".
-      if (!autoScenes) {
-        const tooShort = scenes.find((s) => s.prompt.length < 5)
-        if (tooShort) {
-          throw new Error(
-            `Scene ${tooShort.scene_index + 1} is too short: "${tooShort.prompt}" (need at least 5 characters)`
-          )
-        }
-        const tooLong = scenes.find((s) => s.prompt.length > 2000)
-        if (tooLong) {
-          throw new Error(`Scene ${tooLong.scene_index + 1} is too long (max 2000 characters)`)
-        }
-      }
+      const payloadScenes = [...scenes]
+        .sort((a, b) => a.startTimeSeconds - b.startTimeSeconds)
+        .map((s, i) => ({
+          scene_index: i,
+          prompt: s.visualPrompt.trim(),
+          duration_sec: Math.max(1, s.endTimeSeconds - s.startTimeSeconds),
+          visual_type: s.visualType,
+        }))
 
       const res = await fetch('/api/production/videos', {
         method: 'POST',
@@ -266,7 +247,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           title,
           scriptId: scriptId || undefined,
           voiceGenId: linkedVoiceGen?.id,
-          scenes: scenes.length > 0 ? scenes : undefined,
+          scenes: payloadScenes.length > 0 ? payloadScenes : undefined,
           provider,
           aspectRatio,
         }),
@@ -278,9 +259,8 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
       queryClient.invalidateQueries({ queryKey: ['videos'] })
       setOpen(false)
       setTitle('')
-      setScenesText('')
       setScriptId('')
-      setAutoScenes(null)
+      setScenes([])
     },
   })
 
@@ -301,7 +281,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
 
           <div className="space-y-2">
             <Label>Link Script (optional)</Label>
-            <Select value={scriptId} onValueChange={(v) => { setScriptId(v); setAutoScenes(null) }}>
+            <Select value={scriptId} onValueChange={(v) => { setScriptId(v); setScenes([]) }}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a script" />
               </SelectTrigger>
@@ -320,62 +300,18 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
             )}
           </div>
 
-          {scriptId && !autoScenes && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => autoGenMutation.mutate()}
-              disabled={autoGenMutation.isPending}
-            >
-              {autoGenMutation.isPending ? (
-                <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Planning scenes from script…</>
-              ) : (
-                'Auto-generate scenes from script'
-              )}
-            </Button>
-          )}
-          {autoGenMutation.error && (
-            <p className="text-sm text-destructive">{(autoGenMutation.error as Error).message}</p>
-          )}
+          <div className="space-y-2">
+            <Label>Scenes (optional — leave empty to add later)</Label>
+            <SceneTimelineEditor
+              scenes={scenes}
+              onChange={setScenes}
+              narrationDurationSec={narrationDurationSec}
+              narrationAudioUrl={linkedVoiceGen?.fullAudioUrl ?? undefined}
+              scriptId={scriptId || undefined}
+            />
+          </div>
 
-          {autoScenes ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Scenes (auto-generated from script)</Label>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setAutoScenes(null)}>
-                  Clear
-                </Button>
-              </div>
-              <div className="border rounded-md divide-y max-h-48 overflow-y-auto text-sm">
-                {autoScenes.map((s) => (
-                  <div key={s.scene_index} className="flex items-center justify-between px-3 py-1.5">
-                    <span className="truncate">{s.prompt}</span>
-                    <span className="text-xs text-muted-foreground shrink-0 ml-2">{s.duration_sec}s</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {autoScenes.length} scenes · {autoScenes.reduce((sum, s) => sum + s.duration_sec, 0)}s total
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Scene Prompts (one per line, optional)</Label>
-              <Textarea
-                placeholder={`Opening shot of a futuristic city skyline at dawn\nClose-up of AI chips glowing with blue light\nMontage of people using AI tools at work`}
-                value={scenesText}
-                onChange={(e) => setScenesText(e.target.value)}
-                rows={5}
-                className="font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Each line = 1 scene (5 seconds), 5-2000 characters per line. Leave empty to add scenes later.
-              </p>
-            </div>
-          )}
-
-          {(scenesText.trim() || autoScenes) && (
+          {scenes.length > 0 && (
             <div className="space-y-2">
               <Label>Video Provider</Label>
               <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika')}>
@@ -398,7 +334,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
             </div>
           )}
 
-          {(scenesText.trim() || autoScenes) && (
+          {scenes.length > 0 && (
             <div className="space-y-2">
               <Label>Aspect Ratio</Label>
               <Select value={aspectRatio} onValueChange={(v) => setAspectRatio(v as '16:9' | '9:16')}>
@@ -416,11 +352,16 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           {mutation.error && (
             <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
           )}
+          {hasBlockingErrors && (
+            <p className="text-sm text-destructive">
+              Fix the scene timeline issues above before creating the video.
+            </p>
+          )}
 
           <Button
             className="w-full"
             onClick={() => mutation.mutate()}
-            disabled={!title || !activeChannel || mutation.isPending}
+            disabled={!title || !activeChannel || mutation.isPending || hasBlockingErrors}
           >
             {mutation.isPending ? (
               <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating…</>
@@ -454,7 +395,7 @@ export default function VideosPage() {
     queryFn: async () => {
       const res = await fetch(`/api/content/scripts?channelId=${activeChannel!.id}&limit=50`)
       if (!res.ok) throw new Error('Failed')
-      return res.json() as Promise<{ scripts: Array<{ id: string; title: string }> }>
+      return res.json() as Promise<{ scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }> }>
     },
     enabled: !!activeChannel,
   })
