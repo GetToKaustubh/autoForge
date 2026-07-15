@@ -44,6 +44,12 @@ export const scriptStatusEnum = pgEnum('script_status', [
   'archived',
 ])
 
+export const scriptEditMessageStatusEnum = pgEnum('script_edit_message_status', [
+  'pending',
+  'accepted',
+  'discarded',
+])
+
 export const calendarTypeEnum = pgEnum('calendar_type', [
   'video',
   'short',
@@ -113,8 +119,67 @@ export const scripts = pgTable('scripts', {
   approvedBy: uuid('approved_by').references(() => users.id),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
   triggerJobId: text('trigger_job_id'),
+  // Points at a script_versions.id to jump back to on Redo — no FK constraint,
+  // same "plain pointer" pattern as contentCalendar.videoId below, since it's
+  // set/cleared by app logic rather than needing referential-integrity enforcement.
+  redoVersionId: uuid('redo_version_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// --- AI Script Editor: version history + conversational edit log ---
+// One row per accepted-or-original script state. The "current" row (isCurrent)
+// mirrors what's live in scripts.sections/fullText. parentVersionId links back
+// to whichever version it was edited from, forming an undo chain; nothing is
+// ever deleted, so redo/restore can always recover an older state.
+export const scriptVersions = pgTable('script_versions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  scriptId: uuid('script_id')
+    .notNull()
+    .references(() => scripts.id, { onDelete: 'cascade' }),
+  organizationId: uuid('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  versionNumber: integer('version_number').notNull(),
+  parentVersionId: uuid('parent_version_id'),
+  sections: jsonb('sections').default([]).notNull(),
+  fullText: text('full_text'),
+  wordCount: integer('word_count'),
+  estimatedDurationSec: integer('estimated_duration_sec'),
+  // Null for the original generated/saved snapshot; the instruction that produced
+  // every later version otherwise (e.g. "Made the introduction more engaging").
+  instruction: text('instruction'),
+  isCurrent: boolean('is_current').default(false).notNull(),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// One row per user editing instruction in the AI Script Editor's conversation.
+// proposedSections/proposedFullText hold Gemini's response for review; accepting
+// promotes them into a new scriptVersions row via resultVersionId.
+export const scriptEditMessages = pgTable('script_edit_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  scriptId: uuid('script_id')
+    .notNull()
+    .references(() => scripts.id, { onDelete: 'cascade' }),
+  organizationId: uuid('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  instruction: text('instruction').notNull(),
+  proposedSections: jsonb('proposed_sections'),
+  proposedFullText: text('proposed_full_text'),
+  status: scriptEditMessageStatusEnum('status').default('pending').notNull(),
+  resultVersionId: uuid('result_version_id'),
+  regenerationCount: integer('regeneration_count').default(0).notNull(),
+  modelUsed: text('model_used'),
+  tokensUsed: integer('tokens_used'),
+  errorMessage: text('error_message'),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 // --- Content Calendar ---
@@ -187,6 +252,36 @@ export const scriptsRelations = relations(scripts, ({ one }) => ({
   }),
   approver: one(users, {
     fields: [scripts.approvedBy],
+    references: [users.id],
+  }),
+}))
+
+export const scriptVersionsRelations = relations(scriptVersions, ({ one }) => ({
+  script: one(scripts, {
+    fields: [scriptVersions.scriptId],
+    references: [scripts.id],
+  }),
+  organization: one(organizations, {
+    fields: [scriptVersions.organizationId],
+    references: [organizations.id],
+  }),
+  creator: one(users, {
+    fields: [scriptVersions.createdBy],
+    references: [users.id],
+  }),
+}))
+
+export const scriptEditMessagesRelations = relations(scriptEditMessages, ({ one }) => ({
+  script: one(scripts, {
+    fields: [scriptEditMessages.scriptId],
+    references: [scripts.id],
+  }),
+  organization: one(organizations, {
+    fields: [scriptEditMessages.organizationId],
+    references: [organizations.id],
+  }),
+  creator: one(users, {
+    fields: [scriptEditMessages.createdBy],
     references: [users.id],
   }),
 }))

@@ -10,9 +10,10 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import {
-  ArrowLeft, Save, CheckCircle, Clock, FileText, Loader2, Send, RefreshCw
+  ArrowLeft, Save, CheckCircle, Clock, FileText, Loader2, Send, RefreshCw, Sparkles
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { AiScriptEditor } from '@/components/content/ai-script-editor'
 
 type ScriptStatus = 'draft' | 'review' | 'approved' | 'in_production' | 'archived'
 
@@ -68,6 +69,7 @@ export default function ScriptEditorPage({ params }: { params: Promise<{ scriptI
   const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState(0)
   const [isDirty, setIsDirty] = useState(false)
+  const [showAiEditor, setShowAiEditor] = useState(false)
 
   const { data: script, isLoading } = useQuery({
     queryKey: ['script', scriptId],
@@ -229,6 +231,17 @@ export default function ScriptEditorPage({ params }: { params: Promise<{ scriptI
               Regenerate
             </Button>
           )}
+          {!isGenerating && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAiEditor(true)}
+              disabled={sections.length === 0 || !script.fullText}
+              title={sections.length === 0 || !script.fullText ? 'Generate or add a script before opening the AI Script Editor.' : undefined}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />Edit with AI
+            </Button>
+          )}
           {script.status === 'draft' && sections.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => submitReview()} disabled={isSubmitting}>
               <Send className="h-3.5 w-3.5 mr-1.5" />Submit for Review
@@ -304,6 +317,20 @@ export default function ScriptEditorPage({ params }: { params: Promise<{ scriptI
           </div>
         </div>
       )}
+
+      <AiScriptEditor
+        scriptId={scriptId}
+        open={showAiEditor}
+        onClose={() => setShowAiEditor(false)}
+        currentFullText={script.fullText ?? ''}
+        hasContent={sections.length > 0 && !!script.fullText}
+        onScriptUpdated={(updated) => {
+          setActiveSection(0)
+          void queryClient.setQueryData(['script', scriptId], (old: Script | undefined) =>
+            old ? { ...old, ...updated } : old
+          )
+        }}
+      />
     </div>
   )
 }
