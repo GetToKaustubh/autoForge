@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useActiveChannel } from '@/hooks/use-channel'
-import { ImageIcon, Plus, Loader2, CheckCircle, XCircle, Clock, Download, Check } from 'lucide-react'
+import { ImageIcon, Plus, Loader2, CheckCircle, XCircle, Clock, Download, Check, RefreshCw } from 'lucide-react'
 import Image from 'next/image'
 
 interface Thumbnail {
@@ -66,6 +66,20 @@ function ThumbnailCard({ thumb, onRefetch }: { thumb: Thumbnail; onRefetch: () =
     },
   })
 
+  const regenerateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/production/thumbnails/${thumb.id}/regenerate`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(err.error ?? 'Failed to regenerate')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['thumbnails'] })
+    },
+  })
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -74,8 +88,30 @@ function ThumbnailCard({ thumb, onRefetch }: { thumb: Thumbnail; onRefetch: () =
             <CardTitle className="text-sm truncate">{thumb.prompt}</CardTitle>
             {thumb.style && <p className="text-xs text-muted-foreground mt-0.5 capitalize">{thumb.style}</p>}
           </div>
-          <StatusBadge status={thumb.status} />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <StatusBadge status={thumb.status} />
+            {!isActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Regenerate this thumbnail? Current variants will be replaced.')) regenerateMutation.mutate()
+                }}
+                disabled={regenerateMutation.isPending}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                title="Regenerate"
+              >
+                {regenerateMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
+        {regenerateMutation.error && (
+          <p className="text-xs text-destructive mt-1">{(regenerateMutation.error as Error).message}</p>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {thumb.status === 'processing' && (
