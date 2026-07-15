@@ -12,7 +12,10 @@ const createThumbnailSchema = z.object({
   channelId: z.string().uuid(),
   ideaId: z.string().uuid().optional(),
   videoTitle: z.string().min(3).max(200),
-  prompt: z.string().max(500).optional(),
+  // Detailed art-direction concepts (composition, lighting, text callouts, etc.)
+  // routinely run well past a short-keyword length - 500 was rejecting real
+  // user prompts with a bare "Invalid request", raised with headroom to spare.
+  prompt: z.string().max(3000).optional(),
   style: z.enum(['bold', 'cinematic', 'minimalist', 'viral', 'educational']).optional(),
   variantCount: z.number().int().min(1).max(3).default(3),
 })
@@ -27,7 +30,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const parsed = createThumbnailSchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
+    const firstIssue = parsed.error.issues[0]
+    const detail = firstIssue ? `${firstIssue.path.join('.')}: ${firstIssue.message}` : 'Invalid request'
+    return NextResponse.json({ error: detail, details: parsed.error.flatten() }, { status: 400 })
   }
 
   const member = await getOrgMember(orgId, userId)
