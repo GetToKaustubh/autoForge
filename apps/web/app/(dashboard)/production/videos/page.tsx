@@ -5,20 +5,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useActiveChannel } from '@/hooks/use-channel'
 import {
   Video, Plus, Loader2, Play, Clapperboard, CheckCircle, XCircle, AlertCircle, ArrowRight,
-  Smartphone, Sparkles, RefreshCw, Trash2,
+  Smartphone, Sparkles, RefreshCw, Trash2, Pencil,
 } from 'lucide-react'
 import { SceneTimelineEditor, validateScenes, type EditorScene } from '@/components/production/scene-timeline-editor'
 
 interface VideoItem {
   id: string
   title: string
+  description: string | null
   contentType: 'video' | 'short'
   pipelineStage: PipelineStage
   scenes: Array<{ scene_index: number; status: string }>
@@ -104,8 +106,74 @@ function PipelineProgress({ stage }: { stage: PipelineStage }) {
   )
 }
 
+function EditVideoDialog({ video, open, onClose }: { video: VideoItem; open: boolean; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [title, setTitle] = useState(video.title)
+  const [description, setDescription] = useState(video.description ?? '')
+
+  useEffect(() => {
+    if (open) {
+      setTitle(video.title)
+      setDescription(video.description ?? '')
+    }
+  }, [open, video.title, video.description])
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/production/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description: description || undefined }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to save changes')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['videos'] })
+      onClose()
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Video</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>Title</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Video title" />
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Video description (optional)"
+              rows={4}
+            />
+          </div>
+          {saveMutation.error && (
+            <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={title.trim().length < 3 || saveMutation.isPending}
+          >
+            {saveMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Changes'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => void }) {
   const queryClient = useQueryClient()
+  const [editOpen, setEditOpen] = useState(false)
   const isActive = ACTIVE_STAGES.has(video.pipelineStage)
 
   useEffect(() => {
@@ -162,6 +230,14 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <StageBadge stage={video.pipelineStage} />
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="text-muted-foreground hover:text-foreground"
+              title="Edit video"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
             {removable && (
               <button
                 type="button"
@@ -248,6 +324,8 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
           Created {new Date(video.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
         </p>
       </CardContent>
+
+      <EditVideoDialog video={video} open={editOpen} onClose={() => setEditOpen(false)} />
     </Card>
   )
 }
