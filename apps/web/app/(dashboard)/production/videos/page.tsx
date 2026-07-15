@@ -583,7 +583,7 @@ export default function VideosPage() {
   const { data: scriptsData } = useQuery({
     queryKey: ['scripts-for-video', activeChannel?.id],
     queryFn: async () => {
-      const res = await fetch(`/api/content/scripts?channelId=${activeChannel!.id}&limit=50`)
+      const res = await fetch(`/api/content/scripts?channelId=${activeChannel!.id}&limit=50&activeIdeaOnly=true`)
       if (!res.ok) throw new Error('Failed')
       return res.json() as Promise<{ scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }> }>
     },

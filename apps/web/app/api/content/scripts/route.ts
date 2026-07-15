@@ -1,8 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { scripts, youtubeChannels } from '@/lib/db/schema'
-import { eq, and, desc, isNull } from 'drizzle-orm'
+import { scripts, youtubeChannels, videoIdeas } from '@/lib/db/schema'
+import { eq, and, desc, isNull, or, notInArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { getOrgMember, canWrite } from '@/lib/auth/get-member'
 import { applyRateLimit, rateLimiters } from '@/lib/rate-limit'
@@ -90,12 +90,29 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const channelId = url.searchParams.get('channelId')
   const status = url.searchParams.get('status')
+  const activeIdeaOnly = url.searchParams.get('activeIdeaOnly') === 'true'
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '30'), 100)
   const offset = parseInt(url.searchParams.get('offset') ?? '0')
 
   const conditions = [eq(scripts.organizationId, member.orgDbId)]
   if (channelId) conditions.push(eq(scripts.channelId, channelId))
   if (status) conditions.push(eq(scripts.status, status as 'draft' | 'review' | 'approved' | 'in_production' | 'archived'))
+  // "Pick a script" dropdowns (Voice, Video) opt into this so a script whose
+  // idea was removed from the Approved/In Production Kanban columns stops
+  // being offered there — the script row itself is untouched, just hidden
+  // from "start new work from this" pickers. Scripts with no linked idea
+  // (created manually) are unaffected.
+  if (activeIdeaOnly) {
+    const excludedIdeaIds = db
+      .select({ id: videoIdeas.id })
+      .from(videoIdeas)
+      .where(and(
+        eq(videoIdeas.organizationId, member.orgDbId),
+        or(eq(videoIdeas.status, 'archived'), eq(videoIdeas.status, 'rejected')),
+      ))
+    const activeIdeaCondition = or(isNull(scripts.ideaId), notInArray(scripts.ideaId, excludedIdeaIds))
+    if (activeIdeaCondition) conditions.push(activeIdeaCondition)
+  }
 
   const results = await db
     .select({
