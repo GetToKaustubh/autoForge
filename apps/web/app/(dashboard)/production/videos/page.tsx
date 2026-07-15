@@ -23,6 +23,7 @@ interface VideoItem {
   description: string | null
   contentType: 'video' | 'short'
   pipelineStage: PipelineStage
+  scriptId: string | null
   scenes: Array<{ scene_index: number; status: string }>
   finalVideoUrl: string | null
   durationSec: number | null
@@ -106,17 +107,37 @@ function PipelineProgress({ stage }: { stage: PipelineStage }) {
   )
 }
 
-function EditVideoDialog({ video, open, onClose }: { video: VideoItem; open: boolean; onClose: () => void }) {
+function EditVideoDialog({
+  video,
+  open,
+  onClose,
+  scripts,
+}: {
+  video: VideoItem
+  open: boolean
+  onClose: () => void
+  scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }>
+}) {
+  const isShort = video.contentType === 'short'
   const queryClient = useQueryClient()
   const [title, setTitle] = useState(video.title)
   const [description, setDescription] = useState(video.description ?? '')
+  const [scriptId, setScriptId] = useState('')
+  const [scenes, setScenes] = useState<EditorScene[]>([])
+  const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika'>('stock')
+  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>(isShort ? '9:16' : '16:9')
 
   useEffect(() => {
     if (open) {
       setTitle(video.title)
       setDescription(video.description ?? '')
+      setScriptId(video.scriptId ?? '')
+      setScenes([])
+      setProvider('stock')
+      setAspectRatio(isShort ? '9:16' : '16:9')
     }
-  }, [open, video.title, video.description])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, video.id])
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -130,13 +151,59 @@ function EditVideoDialog({ video, open, onClose }: { video: VideoItem; open: boo
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['videos'] })
+    },
+  })
+
+  const { data: voiceGensData } = useQuery({
+    queryKey: ['voice-for-video', scriptId],
+    queryFn: async () => {
+      const res = await fetch(`/api/production/voice?scriptId=${scriptId}&limit=10`)
+      if (!res.ok) throw new Error('Failed to fetch voice generations')
+      return res.json() as Promise<{ voiceGenerations: Array<{ id: string; status: string; fullAudioUrl: string | null; totalDurationSec: number | null }> }>
+    },
+    enabled: !!scriptId,
+  })
+  const linkedVoiceGen = voiceGensData?.voiceGenerations.find((v) => v.status === 'completed')
+  const selectedScript = scripts.find((s) => s.id === scriptId)
+  const narrationDurationSec = linkedVoiceGen?.totalDurationSec ?? selectedScript?.estimatedDurationSec ?? 60
+
+  const validation = validateScenes(scenes, narrationDurationSec)
+  const hasBlockingErrors = scenes.length > 0 && validation.errors.length > 0
+
+  const regenerateMutation = useMutation({
+    mutationFn: async () => {
+      const payloadScenes = [...scenes]
+        .sort((a, b) => a.startTimeSeconds - b.startTimeSeconds)
+        .map((s, i) => ({
+          scene_index: i,
+          prompt: s.visualPrompt.trim(),
+          duration_sec: Math.max(1, s.endTimeSeconds - s.startTimeSeconds),
+          visual_type: s.visualType,
+        }))
+
+      const res = await fetch(`/api/production/videos/${video.id}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scriptId: scriptId || undefined,
+          voiceGenId: linkedVoiceGen?.id,
+          scenes: payloadScenes,
+          provider,
+          aspectRatio,
+        }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to regenerate')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['videos'] })
       onClose()
     },
   })
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Video</DialogTitle>
         </DialogHeader>
@@ -151,27 +218,136 @@ function EditVideoDialog({ video, open, onClose }: { video: VideoItem; open: boo
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Video description (optional)"
-              rows={4}
+              rows={3}
             />
           </div>
           {saveMutation.error && (
             <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p>
           )}
-        </div>
-        <DialogFooter>
           <Button
+            variant="outline"
+            className="w-full"
             onClick={() => saveMutation.mutate()}
             disabled={title.trim().length < 3 || saveMutation.isPending}
           >
-            {saveMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Changes'}
+            {saveMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Title & Description'}
           </Button>
-        </DialogFooter>
+
+          <div className="border-t pt-4 space-y-4">
+            <div>
+              <Label className="text-sm font-semibold">Regenerate Video</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Build new scenes and generate — this overwrites the current video's visuals once complete.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Link Script (optional)</Label>
+              <Select value={scriptId} onValueChange={(v) => { setScriptId(v); setScenes([]) }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a script" />
+                </SelectTrigger>
+                <SelectContent>
+                  {scripts.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {scriptId && (
+                <p className="text-xs text-muted-foreground">
+                  {linkedVoiceGen
+                    ? '✓ Voice narration will be attached automatically'
+                    : 'No completed voice generation for this script — video will render without narration audio'}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Scenes</Label>
+              <SceneTimelineEditor
+                scenes={scenes}
+                onChange={setScenes}
+                narrationDurationSec={narrationDurationSec}
+                narrationAudioUrl={linkedVoiceGen?.fullAudioUrl ?? undefined}
+                scriptId={scriptId || undefined}
+              />
+            </div>
+
+            {scenes.length > 0 && (
+              <div className="space-y-2">
+                <Label>Video Provider</Label>
+                <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stock">Stock Footage — Pexels (free)</SelectItem>
+                    <SelectItem value="ai-image">AI Images — Pollinations (free)</SelectItem>
+                    <SelectItem value="runway">Runway Gen-3 (~$0.25/scene)</SelectItem>
+                    <SelectItem value="pika">Pika Labs (~$0.20/scene)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {isShort ? (
+              <div className="space-y-1">
+                <Label>Aspect Ratio</Label>
+                <p className="text-sm flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5" />9:16 Vertical — 1080×1920 (Shorts, locked)
+                </p>
+              </div>
+            ) : scenes.length > 0 && (
+              <div className="space-y-2">
+                <Label>Aspect Ratio</Label>
+                <Select value={aspectRatio} onValueChange={(v) => setAspectRatio(v as '16:9' | '9:16')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="16:9">16:9 Landscape</SelectItem>
+                    <SelectItem value="9:16">9:16 Vertical (Shorts)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {regenerateMutation.error && (
+              <p className="text-sm text-destructive">{(regenerateMutation.error as Error).message}</p>
+            )}
+            {hasBlockingErrors && (
+              <p className="text-sm text-destructive">
+                Fix the scene timeline issues above before regenerating.
+              </p>
+            )}
+
+            <Button
+              className="w-full"
+              onClick={() => regenerateMutation.mutate()}
+              disabled={scenes.length === 0 || regenerateMutation.isPending || hasBlockingErrors}
+            >
+              {regenerateMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting regeneration…</>
+              ) : (
+                <><RefreshCw className="w-4 h-4 mr-2" />Regenerate Video</>
+              )}
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )
 }
 
-function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => void }) {
+function VideoCard({
+  video,
+  onRefetch,
+  scripts,
+}: {
+  video: VideoItem
+  onRefetch: () => void
+  scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }>
+}) {
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
   const isActive = ACTIVE_STAGES.has(video.pipelineStage)
@@ -325,7 +501,7 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
         </p>
       </CardContent>
 
-      <EditVideoDialog video={video} open={editOpen} onClose={() => setEditOpen(false)} />
+      <EditVideoDialog video={video} open={editOpen} onClose={() => setEditOpen(false)} scripts={scripts} />
     </Card>
   )
 }
@@ -755,7 +931,7 @@ export default function VideosPage() {
                 In Progress ({inProgress.length})
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {inProgress.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} />)}
+                {inProgress.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} scripts={scripts} />)}
               </div>
             </section>
           )}
@@ -767,7 +943,7 @@ export default function VideosPage() {
                 Action Required ({ready.length})
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {ready.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} />)}
+                {ready.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} scripts={scripts} />)}
               </div>
             </section>
           )}
@@ -779,7 +955,7 @@ export default function VideosPage() {
                 Published / Scheduled ({scheduled.length})
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {scheduled.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} />)}
+                {scheduled.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} scripts={scripts} />)}
               </div>
             </section>
           )}
@@ -788,7 +964,7 @@ export default function VideosPage() {
             <section>
               <h2 className="text-lg font-semibold mb-3 text-muted-foreground">Drafts ({drafts.length})</h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {drafts.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} />)}
+                {drafts.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} scripts={scripts} />)}
               </div>
             </section>
           )}
@@ -800,7 +976,7 @@ export default function VideosPage() {
                 Failed ({failed.length})
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {failed.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} />)}
+                {failed.map((v) => <VideoCard key={v.id} video={v} onRefetch={refetch} scripts={scripts} />)}
               </div>
             </section>
           )}
