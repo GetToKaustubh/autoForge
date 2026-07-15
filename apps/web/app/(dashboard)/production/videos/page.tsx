@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,12 +10,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useActiveChannel } from '@/hooks/use-channel'
-import { Video, Plus, Loader2, Play, Clapperboard, CheckCircle, XCircle, AlertCircle, ArrowRight } from 'lucide-react'
+import {
+  Video, Plus, Loader2, Play, Clapperboard, CheckCircle, XCircle, AlertCircle, ArrowRight,
+  Smartphone, Sparkles, RefreshCw,
+} from 'lucide-react'
 import { SceneTimelineEditor, validateScenes, type EditorScene } from '@/components/production/scene-timeline-editor'
 
 interface VideoItem {
   id: string
   title: string
+  contentType: 'video' | 'short'
   pipelineStage: PipelineStage
   scenes: Array<{ scene_index: number; status: string }>
   finalVideoUrl: string | null
@@ -133,7 +137,16 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
     <Card className={video.pipelineStage === 'failed' ? 'border-destructive/50' : ''}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
-          <CardTitle className="text-base line-clamp-2">{video.title}</CardTitle>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              {video.contentType === 'short' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700">
+                  <Smartphone className="w-3 h-3" />Short
+                </span>
+              )}
+            </div>
+            <CardTitle className="text-base line-clamp-2">{video.title}</CardTitle>
+          </div>
           <StageBadge stage={video.pipelineStage} />
         </div>
       </CardHeader>
@@ -200,7 +213,126 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
   )
 }
 
-function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }> }) {
+const SHORT_TONES = [
+  { value: 'punchy, fast-paced, energetic — written for YouTube Shorts', label: 'Punchy & Energetic' },
+  { value: 'calm, informative, clear — written for YouTube Shorts', label: 'Calm & Informative' },
+  { value: 'funny, casual, meme-aware — written for YouTube Shorts', label: 'Funny & Casual' },
+  { value: 'dramatic, suspenseful, cinematic — written for YouTube Shorts', label: 'Dramatic & Suspenseful' },
+]
+
+function ShortScriptGenerator({
+  channelId,
+  onScriptReady,
+}: {
+  channelId: string
+  onScriptReady: (scriptId: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const [topic, setTopic] = useState('')
+  const [tone, setTone] = useState(SHORT_TONES[0]!.value)
+  const [durationSec, setDurationSec] = useState(45)
+  const [scriptId, setScriptId] = useState<string | null>(null)
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/production/videos/short-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId, topic, tone, targetDurationSec: durationSec }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to generate script')
+      return res.json() as Promise<{ id: string }>
+    },
+    onSuccess: (data) => {
+      setScriptId(data.id)
+      void queryClient.invalidateQueries({ queryKey: ['scripts-for-video'] })
+    },
+  })
+
+  const { data: script } = useQuery({
+    queryKey: ['short-script-status', scriptId],
+    queryFn: async () => {
+      const res = await fetch(`/api/content/scripts/${scriptId}`)
+      if (!res.ok) throw new Error('Failed to load script')
+      return res.json() as Promise<{ id: string; title: string; status: string; triggerJobId: string | null; wordCount: number | null; estimatedDurationSec: number | null }>
+    },
+    enabled: !!scriptId,
+    refetchInterval: (q) => {
+      const s = q.state.data
+      if (!s) return 2000
+      const isGenerating = !!s.triggerJobId && s.status === 'draft' && !s.wordCount
+      return isGenerating ? 2000 : false
+    },
+  })
+
+  const isGenerating = generateMutation.isPending || (!!script && !!script.triggerJobId && script.status === 'draft' && !script.wordCount)
+
+  // Notify the parent dialog once the script actually finishes (word count
+  // lands) so it can link it into the video being created. The parent hides
+  // this whole component as soon as scriptId is set (it shows its own
+  // Regenerate/edit-link controls next to the Link Script dropdown instead,
+  // which also covers scripts picked from that dropdown, not just ones
+  // generated here).
+  useEffect(() => {
+    if (script?.wordCount && scriptId) onScriptReady(scriptId)
+  }, [script?.wordCount, scriptId, onScriptReady])
+
+  return (
+    <div className="rounded-lg border p-3 space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Topic / Idea</Label>
+        <Input
+          placeholder="e.g. 3 productivity hacks that actually work"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Tone</Label>
+          <Select value={tone} onValueChange={setTone}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SHORT_TONES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Target Duration: {durationSec}s</Label>
+          <input
+            type="range" min={15} max={60} step={1}
+            value={durationSec}
+            onChange={(e) => setDurationSec(parseInt(e.target.value))}
+            className="w-full h-9 accent-primary"
+          />
+        </div>
+      </div>
+      {generateMutation.error && (
+        <p className="text-xs text-destructive">{(generateMutation.error as Error).message}</p>
+      )}
+      <Button
+        type="button" size="sm"
+        onClick={() => generateMutation.mutate()}
+        disabled={topic.trim().length < 3 || isGenerating}
+      >
+        {isGenerating ? (
+          <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Writing script…</>
+        ) : (
+          <><Sparkles className="w-3.5 h-3.5 mr-1.5" />Generate Script with AI</>
+        )}
+      </Button>
+    </div>
+  )
+}
+
+function CreateVideoDialog({
+  scripts,
+  contentType,
+}: {
+  scripts: Array<{ id: string; title: string; estimatedDurationSec: number | null }>
+  contentType: 'video' | 'short'
+}) {
+  const isShort = contentType === 'short'
   const queryClient = useQueryClient()
   const activeChannel = useActiveChannel()
   const [open, setOpen] = useState(false)
@@ -208,7 +340,23 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
   const [scriptId, setScriptId] = useState('')
   const [scenes, setScenes] = useState<EditorScene[]>([])
   const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika'>('stock')
-  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9')
+  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>(isShort ? '9:16' : '16:9')
+
+  const handleScriptReady = useCallback((id: string) => {
+    setScriptId(id)
+    setScenes([])
+  }, [])
+
+  const regenerateScriptMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/content/scripts/${scriptId}/regenerate`, { method: 'POST' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to regenerate')
+      return res.json()
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['voice-for-video', scriptId] })
+    },
+  })
 
   const { data: voiceGensData } = useQuery({
     queryKey: ['voice-for-video', scriptId],
@@ -250,6 +398,7 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           scenes: payloadScenes.length > 0 ? payloadScenes : undefined,
           provider,
           aspectRatio,
+          contentType,
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed')
@@ -267,17 +416,28 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button><Plus className="w-4 h-4 mr-2" />New Video</Button>
+        <Button variant={isShort ? 'outline' : 'default'}>
+          {isShort ? <Smartphone className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+          {isShort ? 'New Short' : 'New Video'}
+        </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Video</DialogTitle>
+          <DialogTitle>{isShort ? 'Create Short' : 'Create Video'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-2">
-            <Label>Video Title *</Label>
-            <Input placeholder="Video title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Label>{isShort ? 'Short Title *' : 'Video Title *'}</Label>
+            <Input placeholder={isShort ? 'Short title' : 'Video title'} value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
+
+          {isShort && !scriptId && activeChannel && (
+            <div className="space-y-2">
+              <Label>Generate Script</Label>
+              <ShortScriptGenerator channelId={activeChannel.id} onScriptReady={handleScriptReady} />
+              <p className="text-xs text-muted-foreground">or pick an existing script below</p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Link Script (optional)</Label>
@@ -297,6 +457,27 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
                   ? '✓ Voice narration will be attached automatically'
                   : 'No completed voice generation for this script — video will render without narration audio'}
               </p>
+            )}
+            {isShort && scriptId && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button" variant="outline" size="sm"
+                  onClick={() => regenerateScriptMutation.mutate()}
+                  disabled={regenerateScriptMutation.isPending}
+                >
+                  {regenerateScriptMutation.isPending ? (
+                    <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Regenerating…</>
+                  ) : (
+                    <><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Regenerate Script</>
+                  )}
+                </Button>
+                <a href={`/content/scripts/${scriptId}`} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
+                  Edit full script
+                </a>
+              </div>
+            )}
+            {regenerateScriptMutation.error && (
+              <p className="text-xs text-destructive">{(regenerateScriptMutation.error as Error).message}</p>
             )}
           </div>
 
@@ -334,7 +515,14 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
             </div>
           )}
 
-          {scenes.length > 0 && (
+          {isShort ? (
+            <div className="space-y-1">
+              <Label>Aspect Ratio</Label>
+              <p className="text-sm flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5" />9:16 Vertical — 1080×1920 (Shorts, locked)
+              </p>
+            </div>
+          ) : scenes.length > 0 && (
             <div className="space-y-2">
               <Label>Aspect Ratio</Label>
               <Select value={aspectRatio} onValueChange={(v) => setAspectRatio(v as '16:9' | '9:16')}>
@@ -365,6 +553,8 @@ function CreateVideoDialog({ scripts }: { scripts: Array<{ id: string; title: st
           >
             {mutation.isPending ? (
               <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating…</>
+            ) : isShort ? (
+              <><Smartphone className="w-4 h-4 mr-2" />Create Short</>
             ) : (
               <><Video className="w-4 h-4 mr-2" />Create Video</>
             )}
@@ -427,7 +617,10 @@ export default function VideosPage() {
           <h1 className="text-2xl font-bold">Video Pipeline</h1>
           <p className="text-muted-foreground text-sm mt-1">Track videos through generation and rendering</p>
         </div>
-        <CreateVideoDialog scripts={scripts} />
+        <div className="flex items-center gap-2">
+          <CreateVideoDialog scripts={scripts} contentType="video" />
+          <CreateVideoDialog scripts={scripts} contentType="short" />
+        </div>
       </div>
 
       {videosList.length === 0 ? (

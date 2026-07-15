@@ -32,6 +32,7 @@ const createVideoSchema = z.object({
   })).optional(),
   provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
   aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),
+  contentType: z.enum(['video', 'short']).default('video'),
 })
 
 export async function POST(req: NextRequest) {
@@ -68,6 +69,10 @@ export async function POST(req: NextRequest) {
     .limit(1)
   if (!channel) return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
 
+  // Server-side defense in depth - a Short is always vertical regardless of
+  // what the client sent, same reasoning as the scene duration bound above.
+  const aspectRatio = parsed.data.contentType === 'short' ? '9:16' : parsed.data.aspectRatio
+
   const [video] = await db
     .insert(videos)
     .values({
@@ -79,6 +84,7 @@ export async function POST(req: NextRequest) {
       scriptId: parsed.data.scriptId,
       voiceGenId: parsed.data.voiceGenId,
       thumbnailId: parsed.data.thumbnailId,
+      contentType: parsed.data.contentType,
       pipelineStage: 'draft',
     })
     .returning()
@@ -93,7 +99,7 @@ export async function POST(req: NextRequest) {
       channelId: parsed.data.channelId,
       scenes: parsed.data.scenes,
       provider: parsed.data.provider,
-      aspectRatio: parsed.data.aspectRatio,
+      aspectRatio,
     })
 
     const [updated] = await db
@@ -118,6 +124,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const channelId = url.searchParams.get('channelId')
   const stage = url.searchParams.get('stage')
+  const contentType = url.searchParams.get('contentType')
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20'), 50)
   const offset = parseInt(url.searchParams.get('offset') ?? '0')
 
@@ -127,6 +134,7 @@ export async function GET(req: NextRequest) {
   ]
   if (channelId) conditions.push(eq(videos.channelId, channelId))
   if (stage) conditions.push(eq(videos.pipelineStage, stage as 'draft' | 'script_ready' | 'voice_ready' | 'scenes_generating' | 'scenes_ready' | 'editing' | 'render_queue' | 'rendered' | 'seo_optimized' | 'scheduled' | 'uploaded' | 'published' | 'failed'))
+  if (contentType) conditions.push(eq(videos.contentType, contentType as 'video' | 'short'))
 
   const results = await db
     .select()

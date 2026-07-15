@@ -17,6 +17,8 @@ import { users } from './users'
 import { youtubeChannels } from './channels'
 import { scripts, videoIdeas } from './content'
 
+export const contentTypeEnum = pgEnum('content_type', ['video', 'short'])
+
 export const jobStatusEnum = pgEnum('job_status', [
   'pending',
   'processing',
@@ -122,6 +124,10 @@ export const videos = pgTable('videos', {
     .references(() => users.id),
   title: text('title').notNull(),
   description: text('description'),
+  // 'short' drives 9:16 defaults, the Shorts creation flow, and #Shorts
+  // tagging at upload time - everything else (rendering, scenes, upload)
+  // is aspect-ratio-agnostic and works the same for both.
+  contentType: contentTypeEnum('content_type').default('video').notNull(),
   // Pipeline stage machine
   pipelineStage: pipelineStageEnum('pipeline_stage').default('draft').notNull(),
   // Scene-level video data

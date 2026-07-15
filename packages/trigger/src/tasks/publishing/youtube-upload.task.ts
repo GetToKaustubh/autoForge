@@ -81,7 +81,10 @@ export const youtubeUploadTask = task({
     // Per their docs, a tag containing a space is treated as quote-wrapped and
     // those quotes count too - first attempt at this fix missed that and still
     // got rejected in production despite summing to under 500 without it.
-    const rawTags = video.ytTags ?? []
+    // Shorts get 'Shorts' prepended so it survives the 500-char cutoff even
+    // when the AI-generated tag list is long.
+    const isShort = video.contentType === 'short'
+    const rawTags = isShort ? ['Shorts', ...(video.ytTags ?? [])] : (video.ytTags ?? [])
     const tags: string[] = []
     let tagCharCount = 0
     for (const tag of rawTags) {
@@ -92,11 +95,27 @@ export const youtubeUploadTask = task({
       tagCharCount += addedLength
     }
 
+    // #Shorts in the title/description is the well-documented signal YouTube
+    // uses (alongside the file's own vertical aspect ratio + duration) to
+    // reliably classify and surface a video on the Shorts shelf - the API
+    // doesn't auto-detect this from file properties alone.
+    let title = video.ytTitle ?? video.title
+    let description = video.ytDescription ?? video.description ?? ''
+    if (isShort) {
+      if (!/#shorts/i.test(title)) {
+        const suffix = ' #Shorts'
+        title = title.length + suffix.length > 100 ? title.slice(0, 100 - suffix.length) + suffix : title + suffix
+      }
+      if (!/#shorts/i.test(description)) {
+        description = description ? `${description}\n\n#Shorts` : '#Shorts'
+      }
+    }
+
     // Initiate resumable upload session
     const metadata = {
       snippet: {
-        title: video.ytTitle ?? video.title,
-        description: video.ytDescription ?? video.description ?? '',
+        title,
+        description,
         tags,
         categoryId: video.ytCategoryId ?? '22', // People & Blogs
         defaultLanguage: video.ytLanguage ?? 'en',
