@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useActiveChannel } from '@/hooks/use-channel'
-import { ImageIcon, Plus, Loader2, CheckCircle, XCircle, Clock, Download, Check, RefreshCw } from 'lucide-react'
+import { ImageIcon, Plus, Loader2, CheckCircle, XCircle, Clock, Download, Check, RefreshCw, Trash2 } from 'lucide-react'
 import Image from 'next/image'
 
 interface Thumbnail {
@@ -41,7 +41,7 @@ function StatusBadge({ status }: { status: Thumbnail['status'] }) {
   return <Badge className="bg-gray-500/10 text-gray-600 border-gray-500/20"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
 }
 
-function ThumbnailCard({ thumb, onRefetch }: { thumb: Thumbnail; onRefetch: () => void }) {
+function ThumbnailCard({ thumb, onRefetch, onRemove }: { thumb: Thumbnail; onRefetch: () => void; onRemove: (id: string) => void }) {
   const queryClient = useQueryClient()
   const isActive = thumb.status === 'pending' || thumb.status === 'processing'
 
@@ -107,6 +107,14 @@ function ThumbnailCard({ thumb, onRefetch }: { thumb: Thumbnail; onRefetch: () =
                 )}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => onRemove(thumb.id)}
+              className="text-muted-foreground hover:text-destructive"
+              title="Remove thumbnail"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
         {regenerateMutation.error && (
@@ -283,6 +291,7 @@ function GenerateThumbnailDialog() {
 
 export default function ThumbnailsPage() {
   const activeChannel = useActiveChannel()
+  const queryClient = useQueryClient()
 
   const { data, refetch } = useQuery({
     queryKey: ['thumbnails', activeChannel?.id],
@@ -294,6 +303,15 @@ export default function ThumbnailsPage() {
     },
     enabled: !!activeChannel,
     staleTime: 10_000,
+  })
+
+  const { mutate: removeThumbnail, error: removeError } = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/production/thumbnails/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to remove thumbnail')
+      return res.json()
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['thumbnails'] }),
   })
 
   const thumbnails = data?.thumbnails ?? []
@@ -318,6 +336,10 @@ export default function ThumbnailsPage() {
         <GenerateThumbnailDialog />
       </div>
 
+      {removeError && (
+        <p className="text-sm text-destructive">{(removeError as Error).message}</p>
+      )}
+
       {thumbnails.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center border border-dashed rounded-xl">
           <ImageIcon className="w-10 h-10 text-muted-foreground mb-3" />
@@ -327,7 +349,12 @@ export default function ThumbnailsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {thumbnails.map((t) => (
-            <ThumbnailCard key={t.id} thumb={t} onRefetch={refetch} />
+            <ThumbnailCard
+              key={t.id}
+              thumb={t}
+              onRefetch={refetch}
+              onRemove={(id) => { if (confirm('Remove this thumbnail?')) removeThumbnail(id) }}
+            />
           ))}
         </div>
       )}

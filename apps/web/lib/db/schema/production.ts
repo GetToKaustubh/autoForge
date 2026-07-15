@@ -106,6 +106,7 @@ export const thumbnails = pgTable('thumbnails', {
   triggerJobId: text('trigger_job_id'),
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
 // --- Videos (central pipeline entity) ---

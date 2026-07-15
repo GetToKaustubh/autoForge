@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20'), 50)
   const offset = parseInt(url.searchParams.get('offset') ?? '0')
 
-  const conditions = [eq(thumbnails.organizationId, member.orgDbId)]
+  const conditions = [eq(thumbnails.organizationId, member.orgDbId), isNull(thumbnails.deletedAt)]
   if (channelId) conditions.push(eq(thumbnails.channelId, channelId))
 
   const results = await db
