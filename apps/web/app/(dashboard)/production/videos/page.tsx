@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useActiveChannel } from '@/hooks/use-channel'
 import {
   Video, Plus, Loader2, Play, Clapperboard, CheckCircle, XCircle, AlertCircle, ArrowRight,
-  Smartphone, Sparkles, RefreshCw,
+  Smartphone, Sparkles, RefreshCw, Trash2,
 } from 'lucide-react'
 import { SceneTimelineEditor, validateScenes, type EditorScene } from '@/components/production/scene-timeline-editor'
 
@@ -129,6 +129,19 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
     },
   })
 
+  const removeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/production/videos/${video.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to remove video')
+      if (res.status === 204) return null
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['videos'] })
+    },
+  })
+
+  const removable = video.pipelineStage !== 'uploaded' && video.pipelineStage !== 'published'
   const completedScenes = video.scenes.filter((s) => s.status === 'completed').length
   const totalScenes = video.scenes.length
   const dur = video.durationSec ? `${Math.round(video.durationSec)}s` : null
@@ -147,7 +160,26 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
             </div>
             <CardTitle className="text-base line-clamp-2">{video.title}</CardTitle>
           </div>
-          <StageBadge stage={video.pipelineStage} />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <StageBadge stage={video.pipelineStage} />
+            {removable && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Remove "${video.title}"?`)) removeMutation.mutate()
+                }}
+                disabled={removeMutation.isPending}
+                className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                title="Remove video"
+              >
+                {removeMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -202,6 +234,13 @@ function VideoCard({ video, onRefetch }: { video: VideoItem; onRefetch: () => vo
           <p className="text-xs text-destructive flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
             {(renderMutation.error as Error).message}
+          </p>
+        )}
+
+        {removeMutation.error && (
+          <p className="text-xs text-destructive flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {(removeMutation.error as Error).message}
           </p>
         )}
 
