@@ -34,11 +34,13 @@ const STYLES = [
   { value: 'educational', label: 'Educational' },
 ]
 
-// Google's published per-image pricing for Imagen 4 (ai.google.dev/gemini-api/docs/pricing)
+// Standalone Imagen 4 is no longer available to new API keys - these use
+// Gemini's own native image generation instead (gemini-*-image models).
+// Pricing confirmed live against ai.google.dev/gemini-api/docs/pricing.
 const IMAGEN_COST: Record<'imagen-fast' | 'imagen-standard' | 'imagen-ultra', number> = {
-  'imagen-fast': 0.02,
-  'imagen-standard': 0.04,
-  'imagen-ultra': 0.06,
+  'imagen-fast': 0.0336,
+  'imagen-standard': 0.039,
+  'imagen-ultra': 0.134,
 }
 
 function StatusBadge({ status }: { status: Thumbnail['status'] }) {
@@ -247,9 +249,9 @@ function GenerateThumbnailDialog() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pollinations">Pollinations Flux (free)</SelectItem>
-                <SelectItem value="imagen-fast">Imagen 4 Fast — Google ($0.02/image)</SelectItem>
-                <SelectItem value="imagen-standard">Imagen 4 Standard — Google ($0.04/image)</SelectItem>
-                <SelectItem value="imagen-ultra">Imagen 4 Ultra — Google ($0.06/image)</SelectItem>
+                <SelectItem value="imagen-fast">Gemini Image Lite — Google (~$0.03/image)</SelectItem>
+                <SelectItem value="imagen-standard">Gemini Image — Google (~$0.04/image)</SelectItem>
+                <SelectItem value="imagen-ultra">Gemini Image Pro — Google (~$0.13/image)</SelectItem>
               </SelectContent>
             </Select>
           </div>

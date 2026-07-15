@@ -413,7 +413,10 @@ async function generateWithVeo(
       resolution,
       durationSeconds,
       numberOfVideos: 1,
-      personGeneration: 'allow_adult',
+      // Confirmed live: this account/model rejects personGeneration entirely
+      // ("allow_adult for personGeneration is currently not supported") even
+      // though the SDK type and Veo's own docs list it as a valid field -
+      // omit it rather than guess at another value.
       ...(referenceImage ? { image: referenceImage } : {}),
     },
   })

@@ -3,13 +3,20 @@ import { db } from '../../lib/db'
 import { thumbnails, apiUsage } from '../../lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-const IMAGEN_MODELS = {
-  'imagen-fast': { id: 'imagen-4.0-fast-generate-001', costPerImage: 0.02 },
-  'imagen-standard': { id: 'imagen-4.0-generate-001', costPerImage: 0.04 },
-  'imagen-ultra': { id: 'imagen-4.0-ultra-generate-001', costPerImage: 0.06 },
+// Standalone Imagen 4 ("predict" API) is dead for this account - confirmed
+// live, every imagen-4.0-*-generate-001 model 404s with "no longer available
+// to new users." Google's own error points at the replacement: image
+// generation now lives inside Gemini itself via generateContent (these are
+// the models Google calls "Nano Banana" in some docs), returning inline
+// base64 image bytes as a response part instead of the old predict/bytes
+// shape. Pricing confirmed live via ai.google.dev/gemini-api/docs/pricing.
+const IMAGE_MODELS = {
+  'imagen-fast': { id: 'gemini-3.1-flash-lite-image', costPerImage: 0.0336 },
+  'imagen-standard': { id: 'gemini-2.5-flash-image', costPerImage: 0.039 },
+  'imagen-ultra': { id: 'gemini-3-pro-image', costPerImage: 0.134 },
 } as const
 
-type ThumbnailModel = 'pollinations' | keyof typeof IMAGEN_MODELS
+type ThumbnailModel = 'pollinations' | keyof typeof IMAGE_MODELS
 
 // Pollinations.ai — free image generation, no API key required
 // Uses Flux / SDXL under the hood. 1280x720 = YouTube thumbnail ratio.
@@ -18,43 +25,34 @@ function pollinationsUrl(prompt: string, seed: number): string {
   return `https://image.pollinations.ai/prompt/${encoded}?width=1280&height=720&seed=${seed}&nologo=true&enhance=true`
 }
 
-// Imagen 4 (Google GenAI SDK) — synchronous, no polling needed (unlike Veo's
-// long-running video operations). Returns base64 image bytes directly since
-// no outputGcsUri is set, so each variant is uploaded to Cloudinary here to
+// Gemini native image generation (Google GenAI SDK) — synchronous like
+// Pollinations, no polling (unlike Veo's long-running video operations).
+// Image comes back as an inline base64 part of a normal generateContent
+// response, not a dedicated images array — uploaded to Cloudinary here to
 // get a stable hosted URL, same as every other provider in this app.
-async function generateWithImagen(
+async function generateWithGeminiImage(
   prompt: string,
-  model: keyof typeof IMAGEN_MODELS,
-  seed: number,
+  model: keyof typeof IMAGE_MODELS,
   cloudinary: typeof import('cloudinary').v2,
   folder: string,
   publicId: string
 ): Promise<string> {
-  const { GoogleGenAI, PersonGeneration } = await import('@google/genai')
+  const { GoogleGenAI } = await import('@google/genai')
   const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY! })
 
-  const result = await ai.models.generateImages({
-    model: IMAGEN_MODELS[model].id,
-    prompt,
-    config: {
-      numberOfImages: 1,
-      aspectRatio: '16:9',
-      seed,
-      // Imagen rejects seed when watermarking is on (its default) - seed is
-      // used here purely to vary each of the 3 variants, so watermarking
-      // isn't a feature being deliberately traded away.
-      addWatermark: false,
-      personGeneration: PersonGeneration.ALLOW_ADULT,
-    },
+  const result = await ai.models.generateContent({
+    model: IMAGE_MODELS[model].id,
+    contents: `${prompt}. 16:9 widescreen aspect ratio, YouTube thumbnail composition.`,
   })
 
-  const image = result.generatedImages?.[0]?.image
-  if (!image?.imageBytes) {
-    const filtered = result.generatedImages?.[0]?.raiFilteredReason
-    throw new Error(filtered ? `Imagen filtered this prompt: ${filtered}` : 'Imagen returned no image')
+  const parts = result.candidates?.[0]?.content?.parts ?? []
+  const imagePart = parts.find((p) => !!p.inlineData?.data)
+  if (!imagePart?.inlineData?.data) {
+    const textPart = parts.find((p) => p.text)?.text
+    throw new Error(textPart ? `Model returned no image: ${textPart.slice(0, 200)}` : 'Model returned no image')
   }
 
-  const dataUri = `data:${image.mimeType ?? 'image/png'};base64,${image.imageBytes}`
+  const dataUri = `data:${imagePart.inlineData.mimeType ?? 'image/png'};base64,${imagePart.inlineData.data}`
   const uploaded = await cloudinary.uploader.upload(dataUri, {
     resource_type: 'image',
     folder,
@@ -90,7 +88,7 @@ export const thumbnailGenerationTask = task({
     // thumbnail - appending "minimalist bold design" or "dramatic close-up"
     // to it would contradict details the user already specified. Past that
     // length, use the concept verbatim for every variant and let the only
-    // difference between them be the generation seed.
+    // difference between them be natural model variation across calls.
     const hasDetailedConcept = !!thumbnailConcept && thumbnailConcept.trim().length > 150
 
     const basePrompts = hasDetailedConcept
@@ -127,21 +125,21 @@ export const thumbnailGenerationTask = task({
       for (let i = 0; i < basePrompts.length; i++) {
         const prompt = basePrompts[i]!
         try {
-          const url = await generateWithImagen(prompt, model, Date.now() + i, cloudinary, folder, `variant_${i + 1}`)
+          const url = await generateWithGeminiImage(prompt, model, cloudinary, folder, `variant_${i + 1}`)
           variants.push({ url, prompt, variant: i + 1 })
-          totalCostUsd += IMAGEN_MODELS[model].costPerImage
-          logger.info(`Imagen variant ${i + 1}/${basePrompts.length} completed`)
+          totalCostUsd += IMAGE_MODELS[model].costPerImage
+          logger.info(`Image variant ${i + 1}/${basePrompts.length} completed`)
         } catch (err) {
           const error = err instanceof Error ? err.message : String(err)
-          logger.info(`Imagen variant ${i + 1} failed: ${error}`)
+          logger.info(`Image variant ${i + 1} failed: ${error}`)
         }
       }
       if (variants.length === 0) {
         await db
           .update(thumbnails)
-          .set({ status: 'failed', errorMessage: 'All Imagen variants failed to generate', generationModel: IMAGEN_MODELS[model].id })
+          .set({ status: 'failed', errorMessage: 'All variants failed to generate', generationModel: IMAGE_MODELS[model].id })
           .where(eq(thumbnails.id, thumbnailId))
-        throw new Error('All Imagen variants failed to generate')
+        throw new Error('All variants failed to generate')
       }
     }
 
@@ -150,7 +148,7 @@ export const thumbnailGenerationTask = task({
       .set({
         variants,
         selectedUrl: variants[0]?.url,
-        generationModel: model === 'pollinations' ? 'pollinations-flux' : IMAGEN_MODELS[model].id,
+        generationModel: model === 'pollinations' ? 'pollinations-flux' : IMAGE_MODELS[model].id,
         status: 'completed',
       })
       .where(eq(thumbnails.id, thumbnailId))
@@ -159,7 +157,7 @@ export const thumbnailGenerationTask = task({
       organizationId, userId, service: model === 'pollinations' ? 'openai' : 'imagen',
       unitsUsed: String(variants.length), unitType: 'images',
       costUsd: totalCostUsd.toFixed(6), resourceType: 'thumbnail', resourceId: thumbnailId,
-      metadata: { model: model === 'pollinations' ? 'pollinations-flux' : IMAGEN_MODELS[model].id },
+      metadata: { model: model === 'pollinations' ? 'pollinations-flux' : IMAGE_MODELS[model].id },
     })
 
     logger.info(`Thumbnail generation ${thumbnailId} done: ${variants.length} variants (${model})`)
