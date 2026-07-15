@@ -79,6 +79,7 @@ export const voiceGenerations = pgTable('voice_generations', {
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
 // --- Thumbnails ---

@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20'), 50)
   const offset = parseInt(url.searchParams.get('offset') ?? '0')
 
-  const conditions = [eq(voiceGenerations.organizationId, member.orgDbId)]
+  const conditions = [eq(voiceGenerations.organizationId, member.orgDbId), isNull(voiceGenerations.deletedAt)]
   if (scriptId) conditions.push(eq(voiceGenerations.scriptId, scriptId))
 
   const results = await db

@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useActiveChannel } from '@/hooks/use-channel'
-import { Mic, Play, Pause, Loader2, Plus, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Mic, Play, Pause, Loader2, Plus, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
 
 interface VoiceGeneration {
   id: string
@@ -76,7 +76,7 @@ function AudioPlayer({ url, label }: { url: string; label: string }) {
   )
 }
 
-function VoiceCard({ gen, onRefetch }: { gen: VoiceGeneration; onRefetch: () => void }) {
+function VoiceCard({ gen, onRefetch, onRemove }: { gen: VoiceGeneration; onRefetch: () => void; onRemove: (id: string) => void }) {
   const isActive = gen.status === 'pending' || gen.status === 'processing'
 
   useEffect(() => {
@@ -98,7 +98,17 @@ function VoiceCard({ gen, onRefetch }: { gen: VoiceGeneration; onRefetch: () => 
               {[dur, chars].filter(Boolean).join(' · ') || 'Processing…'}
             </p>
           </div>
-          <StatusBadge status={gen.status} />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <StatusBadge status={gen.status} />
+            <button
+              type="button"
+              onClick={() => onRemove(gen.id)}
+              className="text-muted-foreground hover:text-destructive"
+              title="Remove voice generation"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -221,6 +231,7 @@ function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: 
 
 export default function VoicePage() {
   const activeChannel = useActiveChannel()
+  const queryClient = useQueryClient()
 
   const { data, refetch } = useQuery({
     queryKey: ['voice-generations', activeChannel?.id],
@@ -241,6 +252,15 @@ export default function VoicePage() {
       return res.json() as Promise<{ scripts: Array<{ id: string; title: string }> }>
     },
     enabled: !!activeChannel,
+  })
+
+  const { mutate: removeGeneration, error: removeError } = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/production/voice/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to remove voice generation')
+      return res.json()
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['voice-generations'] }),
   })
 
   const generations = data?.voiceGenerations ?? []
@@ -266,6 +286,10 @@ export default function VoicePage() {
         <GenerateVoiceDialog scripts={scripts} />
       </div>
 
+      {removeError && (
+        <p className="text-sm text-destructive">{(removeError as Error).message}</p>
+      )}
+
       {generations.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center border border-dashed rounded-xl">
           <Mic className="w-10 h-10 text-muted-foreground mb-3" />
@@ -275,7 +299,12 @@ export default function VoicePage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {generations.map((gen) => (
-            <VoiceCard key={gen.id} gen={gen} onRefetch={refetch} />
+            <VoiceCard
+              key={gen.id}
+              gen={gen}
+              onRefetch={refetch}
+              onRemove={(id) => { if (confirm('Remove this voice generation?')) removeGeneration(id) }}
+            />
           ))}
         </div>
       )}
