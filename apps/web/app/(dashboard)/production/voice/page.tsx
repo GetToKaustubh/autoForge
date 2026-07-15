@@ -247,7 +247,7 @@ export default function VoicePage() {
   const { data: scriptsData } = useQuery({
     queryKey: ['scripts-for-voice', activeChannel?.id],
     queryFn: async () => {
-      const res = await fetch(`/api/content/scripts?channelId=${activeChannel!.id}&limit=50&activeIdeaOnly=true`)
+      const res = await fetch(`/api/content/scripts?channelId=${activeChannel!.id}&limit=50&activeIdeaOnly=true&status=approved`)
       if (!res.ok) throw new Error('Failed to fetch scripts')
       return res.json() as Promise<{ scripts: Array<{ id: string; title: string }> }>
     },
