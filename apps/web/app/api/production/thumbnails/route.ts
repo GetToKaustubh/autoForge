@@ -18,6 +18,7 @@ const createThumbnailSchema = z.object({
   prompt: z.string().max(3000).optional(),
   style: z.enum(['bold', 'cinematic', 'minimalist', 'viral', 'educational']).optional(),
   variantCount: z.number().int().min(1).max(3).default(3),
+  model: z.enum(['pollinations', 'imagen-fast', 'imagen-standard', 'imagen-ultra']).default('pollinations'),
 })
 
 export async function POST(req: NextRequest) {
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
     organizationId: member.orgDbId,
     userId: member.userDbId,
     variantCount: parsed.data.variantCount,
+    model: parsed.data.model,
   })
 
   await db

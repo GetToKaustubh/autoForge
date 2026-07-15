@@ -124,8 +124,9 @@ function EditVideoDialog({
   const [description, setDescription] = useState(video.description ?? '')
   const [scriptId, setScriptId] = useState('')
   const [scenes, setScenes] = useState<EditorScene[]>([])
-  const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika'>('stock')
+  const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika' | 'veo'>('stock')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>(isShort ? '9:16' : '16:9')
+  const [veoResolution, setVeoResolution] = useState<'720p' | '1080p'>('720p')
 
   useEffect(() => {
     if (open) {
@@ -135,6 +136,7 @@ function EditVideoDialog({
       setScenes([])
       setProvider('stock')
       setAspectRatio(isShort ? '9:16' : '16:9')
+      setVeoResolution('720p')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, video.id])
@@ -190,6 +192,7 @@ function EditVideoDialog({
           scenes: payloadScenes,
           provider,
           aspectRatio,
+          veoResolution,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to regenerate')
@@ -276,7 +279,7 @@ function EditVideoDialog({
             {scenes.length > 0 && (
               <div className="space-y-2">
                 <Label>Video Provider</Label>
-                <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika')}>
+                <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika' | 'veo')}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -285,8 +288,28 @@ function EditVideoDialog({
                     <SelectItem value="ai-image">AI Images — Pollinations (free)</SelectItem>
                     <SelectItem value="runway">Runway Gen-3 (~$0.25/scene)</SelectItem>
                     <SelectItem value="pika">Pika Labs (~$0.20/scene)</SelectItem>
+                    <SelectItem value="veo">Veo 3.1 Lite — Google ($0.05–0.08/sec)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {scenes.length > 0 && provider === 'veo' && (
+              <div className="space-y-2">
+                <Label>Veo Resolution</Label>
+                <Select value={veoResolution} onValueChange={(v) => setVeoResolution(v as '720p' | '1080p')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="720p">720p — $0.05/sec, scenes up to 6s</SelectItem>
+                    <SelectItem value="1080p">1080p — $0.08/sec, scenes up to 8s</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Veo only generates 4, 6, or 8 second clips — each scene's duration is snapped to the nearest
+                  supported length. Fixed at 24fps; seed and negative prompt aren't supported by this model.
+                </p>
               </div>
             )}
 
@@ -632,8 +655,9 @@ function CreateVideoDialog({
   const [title, setTitle] = useState('')
   const [scriptId, setScriptId] = useState('')
   const [scenes, setScenes] = useState<EditorScene[]>([])
-  const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika'>('stock')
+  const [provider, setProvider] = useState<'stock' | 'ai-image' | 'runway' | 'pika' | 'veo'>('stock')
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>(isShort ? '9:16' : '16:9')
+  const [veoResolution, setVeoResolution] = useState<'720p' | '1080p'>('720p')
 
   const handleScriptReady = useCallback((id: string) => {
     setScriptId(id)
@@ -691,6 +715,7 @@ function CreateVideoDialog({
           scenes: payloadScenes.length > 0 ? payloadScenes : undefined,
           provider,
           aspectRatio,
+          veoResolution,
           contentType,
         }),
       })
@@ -788,7 +813,7 @@ function CreateVideoDialog({
           {scenes.length > 0 && (
             <div className="space-y-2">
               <Label>Video Provider</Label>
-              <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika')}>
+              <Select value={provider} onValueChange={(v) => setProvider(v as 'stock' | 'ai-image' | 'runway' | 'pika' | 'veo')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -797,13 +822,33 @@ function CreateVideoDialog({
                   <SelectItem value="ai-image">AI Images — Pollinations (free)</SelectItem>
                   <SelectItem value="runway">Runway Gen-3 (~$0.25/scene)</SelectItem>
                   <SelectItem value="pika">Pika Labs (~$0.20/scene)</SelectItem>
+                  <SelectItem value="veo">Veo 3.1 Lite — Google ($0.05–0.08/sec)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
                 Stock footage matches each scene prompt to free Pexels video/photos — best for
                 quote/facts-style content. AI Images generates a free synthetic image per scene from
                 your own prompt (better for fictional/stylized scenes stock can't match) and animates
-                it with a slow zoom/pan. Runway/Pika generate original AI video per scene (paid).
+                it with a slow zoom/pan. Runway/Pika/Veo generate original AI video per scene (paid).
+              </p>
+            </div>
+          )}
+
+          {scenes.length > 0 && provider === 'veo' && (
+            <div className="space-y-2">
+              <Label>Veo Resolution</Label>
+              <Select value={veoResolution} onValueChange={(v) => setVeoResolution(v as '720p' | '1080p')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="720p">720p — $0.05/sec, scenes up to 6s</SelectItem>
+                  <SelectItem value="1080p">1080p — $0.08/sec, scenes up to 8s</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Veo only generates 4, 6, or 8 second clips — each scene's duration is snapped to the nearest
+                supported length. Fixed at 24fps; seed and negative prompt aren't supported by this model.
               </p>
             </div>
           )}

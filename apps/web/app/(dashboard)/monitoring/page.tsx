@@ -45,6 +45,8 @@ const SERVICE_COLOR: Record<string, string> = {
   elevenlabs: '#f59e0b',
   runway: '#ef4444',
   pika: '#8b5cf6',
+  veo: '#4285f4',
+  imagen: '#fbbc05',
   cloudinary: '#3b82f6',
   youtube: '#ef4444',
   resend: '#06b6d4',

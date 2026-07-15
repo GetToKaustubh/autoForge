@@ -20,10 +20,11 @@ const regenerateSchema = z.object({
     prompt: z.string().min(5).max(2000),
     duration_sec: z.number().min(1, 'Scene duration must be at least 1 second').max(120, 'Scene duration cannot exceed 120 seconds').default(5),
     reference_image_url: z.string().url().optional(),
-    visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika']).optional(),
+    visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika', 'veo']).optional(),
   })).min(1),
-  provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
+  provider: z.enum(['stock', 'ai-image', 'runway', 'pika', 'veo']).default('stock'),
   aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),
+  veoResolution: z.enum(['720p', '1080p']).default('720p'),
 })
 
 export async function POST(
@@ -99,6 +100,7 @@ export async function POST(
     scenes: parsed.data.scenes,
     provider: parsed.data.provider,
     aspectRatio,
+    veoResolution: parsed.data.veoResolution,
   })
 
   return NextResponse.json({ videoId: id, triggerJobId: handle.id, stage: 'scenes_generating' }, { status: 202 })

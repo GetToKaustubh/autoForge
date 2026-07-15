@@ -34,6 +34,16 @@ export async function POST(
 
   const variantCount = (thumbnail.variants as unknown[]).length || 3
 
+  // model isn't its own column - recovered from the generationModel string
+  // set by the previous run so regenerate doesn't silently switch a thumbnail
+  // that was generated with Imagen back to the Pollinations default.
+  const MODEL_ID_TO_KEY: Record<string, 'imagen-fast' | 'imagen-standard' | 'imagen-ultra'> = {
+    'imagen-4.0-fast-generate-001': 'imagen-fast',
+    'imagen-4.0-generate-001': 'imagen-standard',
+    'imagen-4.0-ultra-generate-001': 'imagen-ultra',
+  }
+  const model = (thumbnail.generationModel && MODEL_ID_TO_KEY[thumbnail.generationModel]) || 'pollinations'
+
   const handle = await tasks.trigger(TASK_IDS.THUMBNAIL_GENERATION, {
     thumbnailId: thumbnail.id,
     // No separate videoTitle column is persisted - the concept prompt already
@@ -44,6 +54,7 @@ export async function POST(
     organizationId: member.orgDbId,
     userId: member.userDbId,
     variantCount,
+    model,
   })
 
   const [updated] = await db

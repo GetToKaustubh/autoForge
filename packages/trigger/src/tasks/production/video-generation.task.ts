@@ -9,7 +9,7 @@ const sceneSchema = z.object({
   reference_image_url: z.string().url().optional(),
   // Per-scene provider override from the timeline editor's Visual Type
   // selector - 'auto'/omitted falls back to the video-level provider below.
-  visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika']).optional(),
+  visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika', 'veo']).optional(),
 })
 
 const videoGenerationPayloadSchema = z.object({
@@ -17,9 +17,11 @@ const videoGenerationPayloadSchema = z.object({
   organizationId: z.string().uuid(),
   channelId: z.string().uuid(),
   scenes: z.array(sceneSchema).min(1).max(30),
-  provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
+  provider: z.enum(['stock', 'ai-image', 'runway', 'pika', 'veo']).default('stock'),
   model: z.enum(['gen3a_turbo', 'gen4_turbo']).default('gen3a_turbo'),
   aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),
+  // Veo-only: 1080p unlocks 8s scenes (720p caps at 6s) and costs more/sec.
+  veoResolution: z.enum(['720p', '1080p']).default('720p'),
 })
 
 export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>
@@ -82,9 +84,13 @@ export const videoGenerationTask = task({
         } else if (effectiveProvider === 'runway') {
           videoUrl = await generateWithRunway(scene)
           totalCostUsd += estimateRunwayCost(scene.duration_sec)
-        } else {
+        } else if (effectiveProvider === 'pika') {
           videoUrl = await generateWithPika(scene)
           totalCostUsd += estimatePikaCost(scene.duration_sec)
+        } else {
+          const veoDuration = clampVeoDuration(scene.duration_sec, payload.veoResolution, !!scene.reference_image_url)
+          videoUrl = await generateWithVeo(scene, payload.aspectRatio, payload.veoResolution, veoDuration)
+          totalCostUsd += estimateVeoCost(veoDuration, payload.veoResolution)
         }
 
         // Upload to Cloudinary
@@ -350,4 +356,82 @@ function estimateRunwayCost(durationSec: number): number {
 
 function estimatePikaCost(durationSec: number): number {
   return durationSec * 0.04 // ~$0.04/sec
+}
+
+// Veo 3.1 Lite only accepts 4, 6, or 8 second clips - 8s requires 1080p or a
+// reference image (per Google's published spec), 720p caps at 6s. Snap the
+// scene's requested duration to the nearest value actually allowed, rather
+// than sending an arbitrary number and getting a 400 back after the scene
+// already spent a slot in the loop.
+function clampVeoDuration(requestedSec: number, resolution: '720p' | '1080p', hasReferenceImage: boolean): 4 | 6 | 8 {
+  const allowed: Array<4 | 6 | 8> = resolution === '1080p' || hasReferenceImage ? [4, 6, 8] : [4, 6]
+  return allowed.reduce((best, v) => (Math.abs(v - requestedSec) < Math.abs(best - requestedSec) ? v : best))
+}
+
+// Google's published per-second pricing for Veo 3.1 Lite (ai.google.dev/gemini-api/docs/pricing):
+// $0.05/sec at 720p, $0.08/sec at 1080p. Paid tier only - no free quota.
+function estimateVeoCost(durationSec: number, resolution: '720p' | '1080p'): number {
+  return durationSec * (resolution === '1080p' ? 0.08 : 0.05)
+}
+
+// Veo 3.1 Lite generation is a long-running operation - submit, then poll
+// ai.operations.getVideosOperation() until done (Google's docs: 11s min, up
+// to ~6min at peak). Neither seed nor negativePrompt are supported by this
+// model per its published spec (the SDK's config type is shared across all
+// Veo versions, some of which do support them - sending them here would be
+// silently ignored at best, so they're deliberately omitted). FPS is fixed
+// at 24 by the model itself, not configurable.
+async function generateWithVeo(
+  scene: z.infer<typeof sceneSchema>,
+  aspectRatio: '16:9' | '9:16',
+  resolution: '720p' | '1080p',
+  durationSeconds: 4 | 6 | 8
+): Promise<string> {
+  const { GoogleGenAI } = await import('@google/genai')
+  const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY! })
+
+  // Veo's Image type only accepts a GCS URI or inline base64 bytes - our
+  // reference_image_url is a plain Cloudinary HTTPS URL, so it has to be
+  // fetched and inlined rather than passed through as-is.
+  let referenceImage: { imageBytes: string; mimeType: string } | undefined
+  if (scene.reference_image_url) {
+    const imgRes = await fetch(scene.reference_image_url)
+    if (imgRes.ok) {
+      const buf = Buffer.from(await imgRes.arrayBuffer())
+      referenceImage = {
+        imageBytes: buf.toString('base64'),
+        mimeType: imgRes.headers.get('content-type') ?? 'image/jpeg',
+      }
+    }
+  }
+
+  let operation = await ai.models.generateVideos({
+    model: 'veo-3.1-lite-generate-preview',
+    prompt: scene.prompt,
+    config: {
+      aspectRatio,
+      resolution,
+      durationSeconds,
+      numberOfVideos: 1,
+      personGeneration: 'allow_adult',
+      ...(referenceImage ? { image: referenceImage } : {}),
+    },
+  })
+
+  const deadline = Date.now() + 600_000 // 10 min ceiling, above Google's documented ~6 min peak-hour max
+  while (!operation.done) {
+    if (Date.now() > deadline) throw new Error('Veo generation timed out')
+    await new Promise((r) => setTimeout(r, 10_000))
+    operation = await ai.operations.getVideosOperation({ operation })
+  }
+
+  if (operation.error) {
+    throw new Error(`Veo generation failed: ${operation.error.message ?? JSON.stringify(operation.error)}`)
+  }
+  const generated = operation.response?.generatedVideos?.[0]
+  if (!generated?.video) throw new Error('Veo succeeded but returned no video')
+
+  const tmpPath = `/tmp/veo_${scene.scene_index}_${Date.now()}.mp4`
+  await ai.files.download({ file: generated.video, downloadPath: tmpPath })
+  return tmpPath
 }

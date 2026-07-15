@@ -34,6 +34,13 @@ const STYLES = [
   { value: 'educational', label: 'Educational' },
 ]
 
+// Google's published per-image pricing for Imagen 4 (ai.google.dev/gemini-api/docs/pricing)
+const IMAGEN_COST: Record<'imagen-fast' | 'imagen-standard' | 'imagen-ultra', number> = {
+  'imagen-fast': 0.02,
+  'imagen-standard': 0.04,
+  'imagen-ultra': 0.06,
+}
+
 function StatusBadge({ status }: { status: Thumbnail['status'] }) {
   if (status === 'completed') return <Badge className="bg-green-500/10 text-green-600 border-green-500/20"><CheckCircle className="w-3 h-3 mr-1" />Completed</Badge>
   if (status === 'failed') return <Badge className="bg-red-500/10 text-red-600 border-red-500/20"><XCircle className="w-3 h-3 mr-1" />Failed</Badge>
@@ -186,6 +193,7 @@ function GenerateThumbnailDialog() {
   const [style, setStyle] = useState('bold')
   const [prompt, setPrompt] = useState('')
   const [variantCount, setVariantCount] = useState('3')
+  const [model, setModel] = useState<'pollinations' | 'imagen-fast' | 'imagen-standard' | 'imagen-ultra'>('pollinations')
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -198,6 +206,7 @@ function GenerateThumbnailDialog() {
           style,
           prompt: prompt || undefined,
           variantCount: parseInt(variantCount),
+          model,
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed')
@@ -231,6 +240,21 @@ function GenerateThumbnailDialog() {
           </div>
 
           <div className="space-y-2">
+            <Label>AI Model</Label>
+            <Select value={model} onValueChange={(v) => setModel(v as typeof model)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pollinations">Pollinations Flux (free)</SelectItem>
+                <SelectItem value="imagen-fast">Imagen 4 Fast — Google ($0.02/image)</SelectItem>
+                <SelectItem value="imagen-standard">Imagen 4 Standard — Google ($0.04/image)</SelectItem>
+                <SelectItem value="imagen-ultra">Imagen 4 Ultra — Google ($0.06/image)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label>Style</Label>
             <Select value={style} onValueChange={setStyle}>
               <SelectTrigger>
@@ -261,9 +285,11 @@ function GenerateThumbnailDialog() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">1 variant (free)</SelectItem>
-                <SelectItem value="2">2 variants (free)</SelectItem>
-                <SelectItem value="3">3 variants (free)</SelectItem>
+                {[1, 2, 3].map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n} variant{n > 1 ? 's' : ''} {model === 'pollinations' ? '(free)' : `(~$${(n * IMAGEN_COST[model]).toFixed(2)})`}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

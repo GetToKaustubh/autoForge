@@ -19,6 +19,8 @@ export const apiServiceEnum = pgEnum('api_service', [
   'elevenlabs',
   'runway',
   'pika',
+  'veo',
+  'imagen',
   'cloudinary',
   'youtube',
   'resend',

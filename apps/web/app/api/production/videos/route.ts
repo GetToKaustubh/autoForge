@@ -28,10 +28,12 @@ const createVideoSchema = z.object({
     reference_image_url: z.string().url().optional(),
     // Per-scene override of the global provider - 'auto' or omitted falls
     // back to the video-level provider.
-    visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika']).optional(),
+    visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika', 'veo']).optional(),
   })).optional(),
-  provider: z.enum(['stock', 'ai-image', 'runway', 'pika']).default('stock'),
+  provider: z.enum(['stock', 'ai-image', 'runway', 'pika', 'veo']).default('stock'),
   aspectRatio: z.enum(['16:9', '9:16']).default('16:9'),
+  // Veo-only: 1080p unlocks 8s scenes, costs $0.08/sec vs $0.05/sec at 720p.
+  veoResolution: z.enum(['720p', '1080p']).default('720p'),
   contentType: z.enum(['video', 'short']).default('video'),
 })
 
@@ -100,6 +102,7 @@ export async function POST(req: NextRequest) {
       scenes: parsed.data.scenes,
       provider: parsed.data.provider,
       aspectRatio,
+      veoResolution: parsed.data.veoResolution,
     })
 
     const [updated] = await db

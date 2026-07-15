@@ -18,7 +18,7 @@ export interface EditorScene {
   startTimeSeconds: number
   endTimeSeconds: number
   visualPrompt: string
-  visualType: 'auto' | 'stock' | 'ai-image' | 'runway' | 'pika'
+  visualType: 'auto' | 'stock' | 'ai-image' | 'runway' | 'pika' | 'veo'
   generationMode: 'manual' | 'ai'
 }
 
@@ -28,6 +28,7 @@ const VISUAL_TYPE_LABELS: Record<EditorScene['visualType'], string> = {
   'ai-image': 'AI Image',
   runway: 'AI Video — Runway',
   pika: 'AI Video — Pika',
+  veo: 'AI Video — Veo 3.1 Lite',
 }
 
 function formatTime(totalSeconds: number): string {
