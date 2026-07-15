@@ -27,15 +27,20 @@ interface VoiceGeneration {
   createdAt: string
 }
 
+// Voice IDs must exist in Microsoft's current Edge TTS catalog (msedge-tts's
+// getVoices()) - Microsoft periodically retires voices, and a stale id here
+// makes every generation with that voice fail at the TTS call with no way
+// to tell from the UI why. Confirmed live against the current catalog:
+// DavisNeural, AmberNeural, and (non-multilingual) WilliamNeural are gone.
 const POPULAR_VOICES = [
   { id: 'en-US-GuyNeural', name: 'Guy (Male, American)' },
-  { id: 'en-US-DavisNeural', name: 'Davis (Male, American)' },
+  { id: 'en-US-EricNeural', name: 'Eric (Male, American)' },
   { id: 'en-US-AriaNeural', name: 'Aria (Female, American)' },
   { id: 'en-US-JennyNeural', name: 'Jenny (Female, American)' },
-  { id: 'en-US-AmberNeural', name: 'Amber (Female, American)' },
+  { id: 'en-US-MichelleNeural', name: 'Michelle (Female, American)' },
   { id: 'en-GB-RyanNeural', name: 'Ryan (Male, British)' },
   { id: 'en-GB-SoniaNeural', name: 'Sonia (Female, British)' },
-  { id: 'en-AU-WilliamNeural', name: 'William (Male, Australian)' },
+  { id: 'en-AU-WilliamMultilingualNeural', name: 'William (Male, Australian)' },
 ]
 
 function StatusBadge({ status }: { status: VoiceGeneration['status'] }) {
