@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Lightbulb, Plus, Wand2, Loader2, CheckCircle, Clock, Rocket, Archive } from 'lucide-react'
+import { Lightbulb, Plus, Wand2, Loader2, CheckCircle, Clock, Rocket, Archive, Trash2 } from 'lucide-react'
 import { useActiveChannel } from '@/hooks/use-channel'
 
 type IdeaStatus = 'idea' | 'approved' | 'in_production' | 'published' | 'rejected' | 'archived'
@@ -42,12 +42,33 @@ const FORMAT_LABELS: Record<VideoFormat, string> = {
   documentary: 'Doc', shorts: 'Shorts', live: 'Live', comparison: 'Comparison',
 }
 
-function IdeaCard({ idea, onStatusChange }: { idea: VideoIdea; onStatusChange: (id: string, status: IdeaStatus) => void }) {
+function IdeaCard({
+  idea,
+  onStatusChange,
+  onRemove,
+}: {
+  idea: VideoIdea
+  onStatusChange: (id: string, status: IdeaStatus) => void
+  onRemove: (id: string) => void
+}) {
+  const removable = idea.status === 'approved' || idea.status === 'in_production'
   return (
     <div className="rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow space-y-2">
       <div className="flex items-start justify-between gap-1">
         <p className="text-sm font-medium leading-tight line-clamp-2">{idea.title}</p>
-        <span className="text-xs text-muted-foreground shrink-0 font-bold">{idea.priority}/10</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs text-muted-foreground font-bold">{idea.priority}/10</span>
+          {removable && (
+            <button
+              type="button"
+              onClick={() => onRemove(idea.id)}
+              className="text-muted-foreground hover:text-destructive"
+              title="Remove idea"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       {idea.hook && <p className="text-xs text-muted-foreground line-clamp-1 italic">"{idea.hook}"</p>}
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -339,6 +360,15 @@ export default function IdeasPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ideas'] }),
   })
 
+  const { mutate: removeIdea, error: removeError } = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/content/ideas/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to remove idea')
+      return res.json()
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ideas'] }),
+  })
+
   const ideas = data?.ideas ?? []
   const byStatus = (status: IdeaStatus) => ideas.filter((i) => i.status === status)
 
@@ -364,6 +394,10 @@ export default function IdeasPage() {
         </Button>
       </div>
 
+      {removeError && (
+        <p className="text-sm text-destructive">{(removeError as Error).message}</p>
+      )}
+
       {isLoading ? (
         <div className="grid grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-64 rounded-xl" />)}
@@ -383,6 +417,7 @@ export default function IdeasPage() {
                     key={idea.id}
                     idea={idea}
                     onStatusChange={(id, s) => updateStatus({ id, status: s })}
+                    onRemove={(id) => { if (confirm(`Remove "${idea.title}"?`)) removeIdea(id) }}
                   />
                 ))}
                 {byStatus(status).length === 0 && (
