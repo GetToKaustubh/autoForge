@@ -69,13 +69,25 @@ export async function PATCH(
   const updateData: Record<string, unknown> = { ...rest, updatedAt: new Date() }
 
   if (sections !== undefined) {
-    updateData.sections = sections
-    const text = sections.map((s) => s.content).join('\n\n')
+    // Recompute every section's own duration from its current content rather
+    // than keeping whatever was last stored - otherwise editing a section's
+    // text in the editor leaves its duration badge showing the old length,
+    // same "stale timestamp" bug fixed at generation time.
+    const recomputed = sections.map((s) => ({
+      ...s,
+      duration_sec: Math.round(s.content.trim().split(/\s+/).filter(Boolean).length / 2.5),
+    }))
+    updateData.sections = recomputed
+    const text = recomputed.map((s) => s.content).join('\n\n')
     updateData.fullText = fullText ?? text
-    updateData.wordCount = text.split(/\s+/).filter(Boolean).length
+    const wordCount = text.split(/\s+/).filter(Boolean).length
+    updateData.wordCount = wordCount
+    updateData.estimatedDurationSec = Math.round(wordCount / 2.5)
   } else if (fullText !== undefined) {
     updateData.fullText = fullText
-    updateData.wordCount = fullText.split(/\s+/).filter(Boolean).length
+    const wordCount = fullText.split(/\s+/).filter(Boolean).length
+    updateData.wordCount = wordCount
+    updateData.estimatedDurationSec = Math.round(wordCount / 2.5)
   }
 
   const [updated] = await db

@@ -142,8 +142,16 @@ Return the complete updated script as JSON per the required format.`
     throw new Error('AI returned an incomplete or malformed script. Please retry.')
   }
 
+  // Same fix as script generation: the model's self-reported duration_sec
+  // per section doesn't reliably match its own word count, producing section
+  // timeline badges that don't add up. Recompute from actual content instead.
+  const sections = validated.data.sections.map((s) => ({
+    ...s,
+    duration_sec: Math.round(s.content.trim().split(/\s+/).filter(Boolean).length / 2.5),
+  }))
+
   return {
-    sections: validated.data.sections,
+    sections,
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
     costUsd: result.costUsd,

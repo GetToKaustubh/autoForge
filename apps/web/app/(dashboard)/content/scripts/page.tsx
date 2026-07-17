@@ -51,7 +51,16 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
   const [withAI, setWithAI] = useState(false)
   const [ideaId, setIdeaId] = useState('')
   const [duration, setDuration] = useState('600')
+  const [customMinutes, setCustomMinutes] = useState('10')
   const [tone, setTone] = useState('engaging and educational')
+
+  const isCustomDuration = duration === 'custom'
+  const customMinutesNum = parseFloat(customMinutes)
+  const customDurationSec = Math.round((Number.isFinite(customMinutesNum) ? customMinutesNum : 0) * 60)
+  // Server enforces the same 60s-7200s (1-120 min) range - validate here too
+  // so the button disables with a clear reason instead of a round-trip 400.
+  const customDurationValid = customDurationSec >= 60 && customDurationSec <= 7200
+  const targetDurationSec = isCustomDuration ? customDurationSec : parseInt(duration)
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -76,7 +85,7 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
           title,
           generateWithAI: withAI,
           ideaId: ideaId || undefined,
-          targetDurationSec: parseInt(duration),
+          targetDurationSec,
           tone,
         }),
       })
@@ -144,8 +153,29 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
                     <SelectItem value="900">15 minutes</SelectItem>
                     <SelectItem value="1200">20 minutes</SelectItem>
                     <SelectItem value="1800">30 minutes</SelectItem>
+                    <SelectItem value="custom">Custom…</SelectItem>
                   </SelectContent>
                 </Select>
+                {isCustomDuration && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="120"
+                        step="0.5"
+                        value={customMinutes}
+                        onChange={(e) => setCustomMinutes(e.target.value)}
+                        placeholder="Minutes"
+                        className="w-28"
+                      />
+                      <span className="text-sm text-muted-foreground">minutes</span>
+                    </div>
+                    {!customDurationValid && (
+                      <p className="text-xs text-destructive">Enter a duration between 1 and 120 minutes.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Tone</Label>
@@ -155,7 +185,10 @@ function CreateScriptDialog({ open, onClose, channelId }: { open: boolean; onClo
           )}
         </div>
         <DialogFooter>
-          <Button onClick={() => create()} disabled={!title.trim() || (withAI && !ideaId) || isPending}>
+          <Button
+            onClick={() => create()}
+            disabled={!title.trim() || (withAI && !ideaId) || (withAI && isCustomDuration && !customDurationValid) || isPending}
+          >
             {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{withAI ? 'Generating...' : 'Creating...'}</> : 'Create Script'}
           </Button>
         </DialogFooter>

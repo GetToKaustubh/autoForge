@@ -67,14 +67,25 @@ Make the script ready to be read aloud by a voice-over artist.`
       type: string; content: string; duration_sec: number; notes: string
     }> }>(userPrompt, systemPrompt)
 
-    const fullText = result.data.sections.map((s) => s.content).join('\n\n')
+    // The model is asked to self-report duration_sec per section (words/2.5),
+    // but its own arithmetic routinely doesn't match its own word count -
+    // confirmed live, a script's sections summed to 45s while word_count/2.5
+    // for the same script gave 39s, a visible mismatch in the section
+    // timeline. Recompute every section's duration from its actual content
+    // instead of trusting the self-reported number.
+    const sections = result.data.sections.map((s) => ({
+      ...s,
+      duration_sec: Math.round(s.content.trim().split(/\s+/).filter(Boolean).length / 2.5),
+    }))
+
+    const fullText = sections.map((s) => s.content).join('\n\n')
     const wordCount = fullText.split(/\s+/).length
     const estimatedDuration = Math.round(wordCount / 2.5)
 
     await db
       .update(scripts)
       .set({
-        sections: result.data.sections,
+        sections,
         fullText,
         wordCount,
         estimatedDurationSec: estimatedDuration,
