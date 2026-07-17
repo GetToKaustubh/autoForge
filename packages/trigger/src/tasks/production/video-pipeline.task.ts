@@ -4,7 +4,11 @@ import { z } from 'zod'
 const videoPipelinePayloadSchema = z.object({
   videoId: z.string().uuid(),
   organizationId: z.string().uuid(),
-  voiceAudioUrl: z.string().url().optional(), // final merged audio
+  voiceAudioUrl: z.string().url().optional(), // final merged audio, overlaid once across the whole concatenated video
+  // Veo autopilot path: each scene has its own dialogue clip, keyed by scene_index (as a string, since
+  // this is a JSON payload) — paired with that scene's own video clip before concatenation instead of one
+  // continuous track laid across the final video. Mutually exclusive with voiceAudioUrl.
+  sceneAudioUrls: z.record(z.string(), z.string().url()).optional(),
   addCaptions: z.boolean().default(false),
   outputFormat: z.enum(['mp4']).default('mp4'),
 })
@@ -61,12 +65,47 @@ export const videoPipelineTask = task({
     // Sort by scene index
     scenes.sort((a, b) => a.scene_index - b.scene_index)
 
-    logger.info(`Concatenating ${scenes.length} scenes for video ${payload.videoId}`)
+    // Veo autopilot path: bake each scene's own dialogue clip into that scene's
+    // video BEFORE concatenation, so scene N plays with scene N's own audio
+    // instead of one continuous track laid across the whole final video.
+    let workingScenes = scenes
+    if (payload.sceneAudioUrls) {
+      logger.info(`Baking per-scene audio for ${scenes.length} scenes`)
+      workingScenes = []
+      for (const scene of scenes) {
+        const audioUrl = payload.sceneAudioUrls[String(scene.scene_index)]
+        const audioPublicId = audioUrl ? extractCloudinaryPublicId(audioUrl) : null
+        if (!audioPublicId) {
+          workingScenes.push(scene)
+          continue
+        }
+        try {
+          const baked = await cloudinary.uploader.explicit(scene.cloudinary_public_id, {
+            type: 'upload',
+            resource_type: 'video',
+            eager: [{
+              transformation: [
+                { overlay: `video:${audioPublicId.replace(/\//g, ':')}`, flags: 'layer_apply', audio_codec: 'aac' },
+              ],
+              format: 'mp4',
+            }],
+            eager_async: false,
+          })
+          const eager = baked.eager?.[0] as { public_id?: string } | undefined
+          workingScenes.push(eager?.public_id ? { ...scene, cloudinary_public_id: eager.public_id } : scene)
+        } catch (err) {
+          logger.info(`Scene ${scene.scene_index} audio bake failed, using silent clip: ${err instanceof Error ? err.message : String(err)}`)
+          workingScenes.push(scene)
+        }
+      }
+    }
+
+    logger.info(`Concatenating ${workingScenes.length} scenes for video ${payload.videoId}`)
 
     // Build Cloudinary concatenation transformation
     // Use the first scene as base and chain the rest via fl_splice
-    const basePublicId = scenes[0]!.cloudinary_public_id
-    const additionalScenes = scenes.slice(1)
+    const basePublicId = workingScenes[0]!.cloudinary_public_id
+    const additionalScenes = workingScenes.slice(1)
 
     type TransformationType = Record<string, unknown>
     const transformations: TransformationType[] = []
@@ -77,8 +116,9 @@ export const videoPipelineTask = task({
       transformations.push({ flags: 'layer_apply' })
     }
 
-    // Overlay voice audio if provided
-    if (payload.voiceAudioUrl) {
+    // Overlay one continuous voice track — only for the non-Veo path
+    // (Veo scenes already have their own audio baked in per-clip above).
+    if (payload.voiceAudioUrl && !payload.sceneAudioUrls) {
       const audioPublicId = extractCloudinaryPublicId(payload.voiceAudioUrl)
       if (audioPublicId) {
         transformations.push({

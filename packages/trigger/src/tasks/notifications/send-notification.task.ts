@@ -7,6 +7,7 @@ export type NotificationType =
   | 'quota_warning'
   | 'pipeline_complete'
   | 'pipeline_failed'
+  | 'review_needed'
 
 interface NotificationPayload {
   to: string
@@ -52,6 +53,10 @@ export const sendNotificationTask = task({
       case 'pipeline_failed':
         subject = `Pipeline failed: "${data.videoTitle}"`
         html = `<h2>Pipeline Failed</h2><p><strong>${data.videoTitle}</strong> failed at stage: <strong>${data.failedStage}</strong>. Error: ${data.errorMessage}</p><p><a href="${data.dashboardUrl}">Retry</a></p>`
+        break
+      case 'review_needed':
+        subject = `Ready to review: "${data.videoTitle}"`
+        html = `<h2>Your autopilot video is ready</h2><p><strong>${data.videoTitle}</strong> for <strong>${data.channelName}</strong> finished the full pipeline and is waiting for your review.</p>${data.thumbnailUrl ? `<p><img src="${data.thumbnailUrl}" alt="thumbnail" style="max-width:400px;border-radius:8px" /></p>` : ''}<p><a href="${data.approveUrl}" style="background:#16a34a;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;margin-right:12px">Approve &amp; Publish</a><a href="${data.rejectUrl}" style="background:#dc2626;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block">Discard</a></p><p style="color:#666;font-size:14px">This link expires in 7 days.</p>`
         break
       default:
         throw new Error(`Unknown notification type: ${type}`)

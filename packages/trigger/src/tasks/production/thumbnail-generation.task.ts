@@ -2,19 +2,7 @@ import { task, logger } from '@trigger.dev/sdk'
 import { db } from '../../lib/db'
 import { thumbnails, apiUsage } from '../../lib/db/schema'
 import { eq } from 'drizzle-orm'
-
-// Standalone Imagen 4 ("predict" API) is dead for this account - confirmed
-// live, every imagen-4.0-*-generate-001 model 404s with "no longer available
-// to new users." Google's own error points at the replacement: image
-// generation now lives inside Gemini itself via generateContent (these are
-// the models Google calls "Nano Banana" in some docs), returning inline
-// base64 image bytes as a response part instead of the old predict/bytes
-// shape. Pricing confirmed live via ai.google.dev/gemini-api/docs/pricing.
-const IMAGE_MODELS = {
-  'imagen-fast': { id: 'gemini-3.1-flash-lite-image', costPerImage: 0.0336 },
-  'imagen-standard': { id: 'gemini-2.5-flash-image', costPerImage: 0.039 },
-  'imagen-ultra': { id: 'gemini-3-pro-image', costPerImage: 0.134 },
-} as const
+import { IMAGE_MODELS, generateWithGeminiImage } from '../../lib/services/gemini-image'
 
 type ThumbnailModel = 'pollinations' | keyof typeof IMAGE_MODELS
 
@@ -23,43 +11,6 @@ type ThumbnailModel = 'pollinations' | keyof typeof IMAGE_MODELS
 function pollinationsUrl(prompt: string, seed: number): string {
   const encoded = encodeURIComponent(prompt)
   return `https://image.pollinations.ai/prompt/${encoded}?width=1280&height=720&seed=${seed}&nologo=true&enhance=true`
-}
-
-// Gemini native image generation (Google GenAI SDK) — synchronous like
-// Pollinations, no polling (unlike Veo's long-running video operations).
-// Image comes back as an inline base64 part of a normal generateContent
-// response, not a dedicated images array — uploaded to Cloudinary here to
-// get a stable hosted URL, same as every other provider in this app.
-async function generateWithGeminiImage(
-  prompt: string,
-  model: keyof typeof IMAGE_MODELS,
-  cloudinary: typeof import('cloudinary').v2,
-  folder: string,
-  publicId: string
-): Promise<string> {
-  const { GoogleGenAI } = await import('@google/genai')
-  const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY! })
-
-  const result = await ai.models.generateContent({
-    model: IMAGE_MODELS[model].id,
-    contents: `${prompt}. 16:9 widescreen aspect ratio, YouTube thumbnail composition.`,
-  })
-
-  const parts = result.candidates?.[0]?.content?.parts ?? []
-  const imagePart = parts.find((p) => !!p.inlineData?.data)
-  if (!imagePart?.inlineData?.data) {
-    const textPart = parts.find((p) => p.text)?.text
-    throw new Error(textPart ? `Model returned no image: ${textPart.slice(0, 200)}` : 'Model returned no image')
-  }
-
-  const dataUri = `data:${imagePart.inlineData.mimeType ?? 'image/png'};base64,${imagePart.inlineData.data}`
-  const uploaded = await cloudinary.uploader.upload(dataUri, {
-    resource_type: 'image',
-    folder,
-    public_id: publicId,
-    format: 'png',
-  })
-  return uploaded.secure_url
 }
 
 export const thumbnailGenerationTask = task({
@@ -125,7 +76,10 @@ export const thumbnailGenerationTask = task({
       for (let i = 0; i < basePrompts.length; i++) {
         const prompt = basePrompts[i]!
         try {
-          const url = await generateWithGeminiImage(prompt, model, cloudinary, folder, `variant_${i + 1}`)
+          const url = await generateWithGeminiImage(
+            `${prompt}. 16:9 widescreen aspect ratio, YouTube thumbnail composition.`,
+            model, cloudinary, folder, `variant_${i + 1}`
+          )
           variants.push({ url, prompt, variant: i + 1 })
           totalCostUsd += IMAGE_MODELS[model].costPerImage
           logger.info(`Image variant ${i + 1}/${basePrompts.length} completed`)

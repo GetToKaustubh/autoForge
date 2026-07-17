@@ -53,6 +53,17 @@ export const youtubeChannels = pgTable('youtube_channels', {
   quotaUsedToday: integer('quota_used_today').default(0).notNull(),
   quotaLimitDaily: integer('quota_limit_daily').default(10000).notNull(),
   quotaResetAt: timestamp('quota_reset_at', { withTimezone: true }),
+  // Autopilot
+  autopilotEnabled: boolean('autopilot_enabled').default(false).notNull(),
+  autopilotNichePrompt: text('autopilot_niche_prompt'),
+  autopilotProvider: text('autopilot_provider').default('stock').notNull(),
+  autopilotMode: text('autopilot_mode').default('review').notNull(),
+  autopilotScheduleHourUtc: integer('autopilot_schedule_hour_utc').default(9).notNull(),
+  autopilotTargetAudience: text('autopilot_target_audience'),
+  autopilotFormat: text('autopilot_format'),
+  autopilotScheduleId: text('autopilot_schedule_id'),
+  autopilotLastRunAt: timestamp('autopilot_last_run_at', { withTimezone: true }),
+  autopilotConsecutiveFailures: integer('autopilot_consecutive_failures').default(0).notNull(),
   // Status
   status: channelStatusEnum('status').default('active').notNull(),
   isPrimary: boolean('is_primary').default(false).notNull(),

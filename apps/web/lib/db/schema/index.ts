@@ -13,6 +13,7 @@ export * from './production'
 export * from './analytics'
 export * from './workflows'
 export * from './monitoring'
+export * from './autopilot'
 
 // Re-export types used across the app
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm'

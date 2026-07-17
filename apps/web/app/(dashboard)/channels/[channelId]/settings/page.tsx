@@ -3,11 +3,15 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, Trash2, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Save, Trash2, AlertTriangle, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -18,7 +22,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { useChannel } from '@/hooks/use-channel'
+import { useChannel, useAutopilotRuns, useAutopilotToggle, useAutopilotRunNow, type AutopilotRun } from '@/hooks/use-channel'
 
 export default function ChannelSettingsPage() {
   const params = useParams()
@@ -26,6 +30,9 @@ export default function ChannelSettingsPage() {
   const channelId = params.channelId as string
 
   const { data: channel, isLoading } = useChannel(channelId)
+  const { data: autopilotRuns } = useAutopilotRuns(channelId)
+  const autopilotToggle = useAutopilotToggle(channelId)
+  const autopilotRunNow = useAutopilotRunNow(channelId)
 
   const [form, setForm] = useState({
     defaultCategory: '',
@@ -36,6 +43,17 @@ export default function ChannelSettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  const [autopilotForm, setAutopilotForm] = useState({
+    enabled: false,
+    nichePrompt: '',
+    provider: 'stock',
+    mode: 'review',
+    scheduleHourUtc: 9,
+    targetAudience: '',
+    format: '',
+  })
+  const [veoConfirmOpen, setVeoConfirmOpen] = useState(false)
+
   useEffect(() => {
     if (channel) {
       setForm({
@@ -43,8 +61,60 @@ export default function ChannelSettingsPage() {
         language: channel.language ?? '',
         defaultTags: channel.defaultTags?.join(', ') ?? '',
       })
+      setAutopilotForm({
+        enabled: channel.autopilotEnabled,
+        nichePrompt: channel.autopilotNichePrompt ?? '',
+        provider: channel.autopilotProvider,
+        mode: channel.autopilotMode,
+        scheduleHourUtc: channel.autopilotScheduleHourUtc,
+        targetAudience: channel.autopilotTargetAudience ?? '',
+        format: channel.autopilotFormat ?? '',
+      })
     }
   }, [channel])
+
+  async function handleSaveAutopilot() {
+    try {
+      await autopilotToggle.mutateAsync({
+        enabled: autopilotForm.enabled,
+        nichePrompt: autopilotForm.nichePrompt || undefined,
+        provider: autopilotForm.provider,
+        mode: autopilotForm.mode,
+        scheduleHourUtc: autopilotForm.scheduleHourUtc,
+        targetAudience: autopilotForm.targetAudience || undefined,
+        format: autopilotForm.format || undefined,
+      })
+      toast.success(autopilotForm.enabled ? 'Autopilot enabled' : 'Autopilot disabled')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save autopilot settings')
+    }
+  }
+
+  async function handleRunNow() {
+    try {
+      await autopilotRunNow.mutateAsync()
+      toast.success('Autopilot run started — check the history below in a few minutes')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to start autopilot run')
+    }
+  }
+
+  function handleProviderChange(value: string) {
+    if (value === 'veo' && autopilotForm.provider !== 'veo') {
+      setVeoConfirmOpen(true)
+      return
+    }
+    setAutopilotForm((f) => ({ ...f, provider: value }))
+  }
+
+  const runStatusVariant: Record<AutopilotRun['status'], 'default' | 'secondary' | 'destructive' | 'warning' | 'success'> = {
+    running: 'secondary',
+    completed: 'success',
+    failed: 'destructive',
+    skipped: 'secondary',
+    awaiting_review: 'warning',
+    discarded: 'secondary',
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -179,6 +249,162 @@ export default function ChannelSettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Autopilot */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Autopilot</CardTitle>
+              <CardDescription>
+                Give it one niche/style prompt and it generates, produces, and{' '}
+                {autopilotForm.mode === 'auto' ? 'publishes' : 'prepares for your review'} a new
+                video on a schedule — no other manual steps.
+              </CardDescription>
+            </div>
+            <Switch
+              checked={autopilotForm.enabled}
+              disabled={!autopilotForm.nichePrompt.trim() && !autopilotForm.enabled}
+              onCheckedChange={(checked) => setAutopilotForm((f) => ({ ...f, enabled: checked }))}
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="niche-prompt">Niche / Style Prompt</Label>
+            <Textarea
+              id="niche-prompt"
+              placeholder="e.g. Short animated videos teaching kids the alphabet through talking fruit characters — playful, colorful, upbeat narration."
+              rows={4}
+              value={autopilotForm.nichePrompt}
+              onChange={(e) => setAutopilotForm((f) => ({ ...f, nichePrompt: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground">
+              The only input autopilot needs. Be specific — this drives every idea, script, and
+              visual it generates.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Visual Provider</Label>
+              <Select value={autopilotForm.provider} onValueChange={handleProviderChange}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stock">Stock Footage (free)</SelectItem>
+                  <SelectItem value="ai-image">AI Images (free)</SelectItem>
+                  <SelectItem value="runway">Runway (~$0.05-0.50/sec)</SelectItem>
+                  <SelectItem value="pika">Pika (~$0.04/sec)</SelectItem>
+                  <SelectItem value="veo">Veo 3.1 (~$0.05-0.08/sec, highest quality)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Mode</Label>
+              <Select value={autopilotForm.mode} onValueChange={(v) => setAutopilotForm((f) => ({ ...f, mode: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="review">Review — email me to approve first</SelectItem>
+                  <SelectItem value="auto">Auto — publish immediately</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Run Time (UTC)</Label>
+            <Select
+              value={String(autopilotForm.scheduleHourUtc)}
+              onValueChange={(v) => setAutopilotForm((f) => ({ ...f, scheduleHourUtc: Number(v) }))}
+            >
+              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <SelectItem key={h} value={String(h)}>{String(h).padStart(2, '0')}:00 UTC</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              YouTube's daily quota (10,000 units per Google Cloud project, shared across every
+              channel on it) caps this to roughly 6 uploads/day project-wide.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={handleSaveAutopilot} disabled={autopilotToggle.isPending}>
+              <Save className="mr-2 h-4 w-4" />
+              {autopilotToggle.isPending ? 'Saving…' : 'Save Autopilot Settings'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleRunNow}
+              disabled={autopilotRunNow.isPending || !autopilotForm.nichePrompt.trim()}
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {autopilotRunNow.isPending ? 'Starting…' : 'Run Once Now'}
+            </Button>
+          </div>
+
+          {autopilotRuns && autopilotRuns.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <Label>Recent Runs</Label>
+              <div className="space-y-1.5">
+                {autopilotRuns.map((run) => (
+                  <div key={run.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={runStatusVariant[run.status]}>
+                        {run.status === 'awaiting_review' ? 'Awaiting your approval' : run.status}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        {new Date(run.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      {run.costUsd && Number(run.costUsd) > 0 && <span>${Number(run.costUsd).toFixed(2)}</span>}
+                      {run.ytUrl && (
+                        <a href={run.ytUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          View on YouTube
+                        </a>
+                      )}
+                      {run.videoId && !run.ytUrl && (
+                        <Link href={`/production/videos/${run.videoId}`} className="text-primary hover:underline">
+                          View video
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={veoConfirmOpen} onOpenChange={setVeoConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch to Veo 3.1?</DialogTitle>
+            <DialogDescription>
+              Veo costs real money on every autopilot run — roughly $0.05-0.08 per second of
+              generated video, typically $2-6 per video depending on scene count. Unlike a manual
+              generation, autopilot will keep spending this on every scheduled run with no
+              per-run confirmation once enabled.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVeoConfirmOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                setAutopilotForm((f) => ({ ...f, provider: 'veo' }))
+                setVeoConfirmOpen(false)
+              }}
+            >
+              Use Veo 3.1
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Danger zone */}
       <Card className="border-destructive/30">

@@ -28,6 +28,10 @@ export const TASK_IDS = {
   // Workflows
   WORKFLOW_EXECUTION: 'workflow-execution',
 
+  // Autopilot
+  CHANNEL_AUTOPILOT: 'channel-autopilot',
+  AUTOPILOT_SCHEDULE: 'autopilot-schedule',
+
   // Analytics
   ANALYTICS_SYNC: 'analytics-sync',
 
