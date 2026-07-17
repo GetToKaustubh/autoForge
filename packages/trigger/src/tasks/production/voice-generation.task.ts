@@ -1,12 +1,19 @@
 import { task, logger } from '@trigger.dev/sdk'
 import { z } from 'zod'
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
+import { MsEdgeTTS, OUTPUT_FORMAT, RATE } from 'msedge-tts'
+
+const PACE_TO_RATE: Record<'slow' | 'normal' | 'fast', RATE> = {
+  slow: RATE.SLOW,
+  normal: RATE.DEFAULT,
+  fast: RATE.FAST,
+}
 
 const voicePayloadSchema = z.object({
   voiceGenId: z.string().uuid(),
   scriptId: z.string().uuid(),
   organizationId: z.string().uuid(),
   voiceId: z.string(),
+  pace: z.enum(['slow', 'normal', 'fast']).default('normal'),
   voiceSettings: z.object({
     stability: z.number().default(0.5),
     similarityBoost: z.number().default(0.75),
@@ -97,7 +104,7 @@ export const voiceGenerationTask = task({
       // Microsoft Edge neural TTS (free, no API key) via msedge-tts
       const tts = new MsEdgeTTS()
       await tts.setMetadata(payload.voiceId, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
-      const { audioStream } = tts.toStream(text)
+      const { audioStream } = tts.toStream(text, { rate: PACE_TO_RATE[payload.pace] })
       const chunks: Buffer[] = []
       for await (const chunk of audioStream) {
         chunks.push(chunk as Buffer)

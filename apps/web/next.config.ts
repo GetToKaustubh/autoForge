@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   },
 
   // Packages that use Node.js internals — must not be bundled by webpack
-  serverExternalPackages: ['pino', 'pino-pretty', 'postgres'],
+  serverExternalPackages: ['pino', 'pino-pretty', 'postgres', 'msedge-tts', 'ws'],
 
   images: {
     remotePatterns: [

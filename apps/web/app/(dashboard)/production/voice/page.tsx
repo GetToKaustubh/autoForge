@@ -10,14 +10,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useActiveChannel } from '@/hooks/use-channel'
-import { Mic, Play, Pause, Loader2, Plus, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
+import { Mic, Play, Pause, Loader2, Plus, CheckCircle, XCircle, Clock, Trash2, ChevronDown } from 'lucide-react'
 
 interface VoiceGeneration {
   id: string
   scriptId: string
   voiceId: string
   voiceName: string | null
-  voiceSettings: { stability: number; similarityBoost: number; style: number; useSpeakerBoost: boolean }
+  voiceSettings: { stability: number; similarityBoost: number; style: number; useSpeakerBoost: boolean; pace?: 'slow' | 'normal' | 'fast' }
   sections: Array<{ section_index: number; cloudinary_url: string; duration_sec: number; characters_used: number }>
   fullAudioUrl: string | null
   totalChars: number | null
@@ -87,6 +87,9 @@ function VoiceCard({ gen, onRefetch, onRemove }: { gen: VoiceGeneration; onRefet
 
   const dur = gen.totalDurationSec ? `${Math.round(gen.totalDurationSec)}s` : null
   const chars = gen.totalChars ? `${gen.totalChars.toLocaleString()} chars` : null
+  const pace = gen.voiceSettings?.pace && gen.voiceSettings.pace !== 'normal'
+    ? gen.voiceSettings.pace[0]!.toUpperCase() + gen.voiceSettings.pace.slice(1) + ' pace'
+    : null
 
   return (
     <Card>
@@ -95,7 +98,7 @@ function VoiceCard({ gen, onRefetch, onRemove }: { gen: VoiceGeneration; onRefet
           <div className="flex-1 min-w-0">
             <CardTitle className="text-base truncate">{gen.voiceName ?? gen.voiceId}</CardTitle>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {[dur, chars].filter(Boolean).join(' · ') || 'Processing…'}
+              {[dur, chars, pace].filter(Boolean).join(' · ') || 'Processing…'}
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -140,11 +143,102 @@ function VoiceCard({ gen, onRefetch, onRemove }: { gen: VoiceGeneration; onRefet
   )
 }
 
+// Custom dropdown (not the shadcn Select) because each row needs its own
+// clickable preview button nested inside a selectable row - Radix Select's
+// SelectItem hit-tests the whole row on pointerdown, which swallows clicks
+// on nested interactive children before they can reach a button's own
+// handler, making a real inline "preview without selecting" control
+// unreliable inside it.
+function VoicePicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const selected = POPULAR_VOICES.find((v) => v.id === value)
+
+  const stopPreview = () => {
+    audioRef.current?.pause()
+    setPreviewingId(null)
+  }
+
+  const togglePreview = (voiceId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (previewingId === voiceId) {
+      stopPreview()
+      return
+    }
+    audioRef.current?.pause()
+    setLoadingId(voiceId)
+    const audio = new Audio(`/api/production/voice/preview?voiceId=${encodeURIComponent(voiceId)}`)
+    audioRef.current = audio
+    audio.onended = () => setPreviewingId((cur) => (cur === voiceId ? null : cur))
+    audio.oncanplay = () => {
+      setLoadingId((cur) => (cur === voiceId ? null : cur))
+      setPreviewingId(voiceId)
+      void audio.play()
+    }
+    audio.onerror = () => {
+      setLoadingId((cur) => (cur === voiceId ? null : cur))
+      setPreviewingId((cur) => (cur === voiceId ? null : cur))
+    }
+  }
+
+  useEffect(() => {
+    return () => audioRef.current?.pause()
+  }, [])
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        <span>{selected?.name ?? 'Select a voice'}</span>
+        <ChevronDown className="h-4 w-4 opacity-50" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-72 overflow-y-auto">
+            {POPULAR_VOICES.map((v) => (
+              <div
+                key={v.id}
+                onClick={() => { onChange(v.id); setOpen(false) }}
+                className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-accent ${v.id === value ? 'bg-accent/50 font-medium' : ''}`}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => togglePreview(v.id, e)}
+                  title={previewingId === v.id ? 'Stop preview' : 'Preview voice'}
+                  className="shrink-0 h-6 w-6 flex items-center justify-center rounded-full border hover:bg-background"
+                >
+                  {loadingId === v.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : previewingId === v.id ? (
+                    <Pause className="h-3 w-3" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                </button>
+                <span className="flex-1">{v.name}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: string }> }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [scriptId, setScriptId] = useState('')
   const [voiceId, setVoiceId] = useState(POPULAR_VOICES[0]!.id)
+  const [pace, setPace] = useState<'slow' | 'normal' | 'fast'>('normal')
 
   const channelId = useActiveChannel()?.id ?? ''
 
@@ -159,6 +253,7 @@ function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: 
           channelId,
           voiceId,
           voiceName: selectedVoice?.name,
+          pace,
         }),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to start voice generation')
@@ -196,14 +291,20 @@ function GenerateVoiceDialog({ scripts }: { scripts: Array<{ id: string; title: 
 
           <div className="space-y-2">
             <Label>Voice</Label>
-            <Select value={voiceId} onValueChange={setVoiceId}>
+            <VoicePicker value={voiceId} onChange={setVoiceId} />
+            <p className="text-xs text-muted-foreground">Click the play icon next to a voice to preview it before generating.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Pace</Label>
+            <Select value={pace} onValueChange={(v) => setPace(v as 'slow' | 'normal' | 'fast')}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {POPULAR_VOICES.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                ))}
+                <SelectItem value="slow">Slow</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="fast">Fast</SelectItem>
               </SelectContent>
             </Select>
           </div>

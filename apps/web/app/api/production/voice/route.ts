@@ -13,6 +13,7 @@ const createVoiceSchema = z.object({
   channelId: z.string().uuid(),
   voiceId: z.string().min(1),
   voiceName: z.string().optional(),
+  pace: z.enum(['slow', 'normal', 'fast']).default('normal'),
   voiceSettings: z.object({
     stability: z.number().min(0).max(1).default(0.5),
     similarityBoost: z.number().min(0).max(1).default(0.75),
@@ -66,7 +67,10 @@ export async function POST(req: NextRequest) {
       createdBy: member.userDbId,
       voiceId: parsed.data.voiceId,
       voiceName: parsed.data.voiceName,
-      voiceSettings: parsed.data.voiceSettings,
+      // No dedicated pace column - stored alongside the (otherwise unused,
+      // legacy ElevenLabs-shaped) voiceSettings blob so it shows up wherever
+      // that's already displayed, no migration needed.
+      voiceSettings: { ...parsed.data.voiceSettings, pace: parsed.data.pace },
       status: 'pending',
     })
     .returning()
@@ -78,6 +82,7 @@ export async function POST(req: NextRequest) {
     scriptId: parsed.data.scriptId,
     organizationId: member.orgDbId,
     voiceId: parsed.data.voiceId,
+    pace: parsed.data.pace,
     voiceSettings: parsed.data.voiceSettings,
   })
 

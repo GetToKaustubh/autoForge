@@ -50,3 +50,6 @@ test-results
 .claude/
 .agents/
 skills-lock.json
+
+# Next.js
+next-env.d.ts
