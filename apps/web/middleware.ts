@@ -10,6 +10,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/webhooks/(.*)',
   '/api/health',
   '/api/auth/youtube/callback', // Google redirects here — no Clerk org context in request
+  '/api/autopilot/approve', // clicked from an email link, secured by its own token instead
 ])
 
 const clerkHandler = clerkMiddleware(async (auth, req: NextRequest) => {
@@ -27,9 +28,11 @@ const clerkHandler = clerkMiddleware(async (auth, req: NextRequest) => {
 
 export default function middleware(req: NextRequest, event: NextFetchEvent) {
   // Clerk's "Membership required" setting intercepts this route at the edge
-  // before our handler runs — even when marked as public. The callback no longer
-  // calls auth() so it's safe to bypass Clerk entirely here.
-  if (req.nextUrl.pathname === '/api/auth/youtube/callback') {
+  // before our handler runs — even when marked as public. Neither callback
+  // calls auth(), so it's safe to bypass Clerk entirely here. The approve
+  // route is clicked from an email link and secured by its own token instead
+  // of a session — a signed-out or wrong-account browser must still work.
+  if (req.nextUrl.pathname === '/api/auth/youtube/callback' || req.nextUrl.pathname === '/api/autopilot/approve') {
     return NextResponse.next()
   }
 
