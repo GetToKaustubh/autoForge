@@ -61,21 +61,33 @@ export async function POST(req: NextRequest) {
 
   if (!record) return NextResponse.json({ error: 'Failed to create record' }, { status: 500 })
 
-  // Trigger background job
-  const handle = await tasks.trigger(TASK_IDS.NICHE_RESEARCH, {
-    researchId: record.id,
-    query,
-    organizationId: member.orgDbId,
-    userId: member.userDbId,
-  })
+  // The row above is already committed by this point - if tasks.trigger()
+  // (a network call to Trigger.dev) throws, an uncaught exception here left
+  // the row stuck at 'pending' forever with no triggerJobId and no way for
+  // the UI to know anything went wrong (confirmed live: 4 orphaned rows from
+  // real user attempts). Mark it failed instead so the UI shows a real error
+  // and the user can retry, rather than an infinite loading skeleton.
+  try {
+    const handle = await tasks.trigger(TASK_IDS.NICHE_RESEARCH, {
+      researchId: record.id,
+      query,
+      organizationId: member.orgDbId,
+      userId: member.userDbId,
+    })
 
-  // Store trigger job ID
-  await db
-    .update(nicheResearch)
-    .set({ triggerJobId: handle.id })
-    .where(eq(nicheResearch.id, record.id))
+    await db
+      .update(nicheResearch)
+      .set({ triggerJobId: handle.id })
+      .where(eq(nicheResearch.id, record.id))
 
-  return NextResponse.json({ id: record.id, triggerJobId: handle.id, status: 'pending' }, { status: 202 })
+    return NextResponse.json({ id: record.id, triggerJobId: handle.id, status: 'pending' }, { status: 202 })
+  } catch (err) {
+    await db
+      .update(nicheResearch)
+      .set({ status: 'failed', errorMessage: err instanceof Error ? err.message : 'Failed to start research job' })
+      .where(eq(nicheResearch.id, record.id))
+    return NextResponse.json({ error: 'Failed to start research. Please try again.' }, { status: 502 })
+  }
 }
 
 export async function GET(req: NextRequest) {

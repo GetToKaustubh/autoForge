@@ -23,6 +23,17 @@ export const nicheResearchTask = task({
       .set({ status: 'running' })
       .where(eq(nicheResearch.id, researchId))
 
+    try {
+      return await runResearch()
+    } catch (err) {
+      await db
+        .update(nicheResearch)
+        .set({ status: 'failed', errorMessage: err instanceof Error ? err.message : String(err) })
+        .where(eq(nicheResearch.id, researchId))
+      throw err
+    }
+
+    async function runResearch() {
     const prompt = `Research YouTube niches related to: "${query}"
 
 Return a JSON object with this exact structure:
@@ -72,5 +83,6 @@ Return 5-8 niches. score is 0-100.`
     const nichesArr = Array.isArray(result.data?.niches) ? result.data.niches : []
     logger.info(`Niche research ${researchId} completed: ${nichesArr.length} niches found`)
     return { researchId, nichesFound: nichesArr.length }
+    }
   },
 })
