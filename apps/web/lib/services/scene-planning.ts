@@ -134,3 +134,75 @@ Rules:
   const validated = stockSceneOutputSchema.parse(data)
   return validated.scenes
 }
+
+// "Explainer" style — flat 2D vector doodle illustrations with a single
+// recurring character, optional bold on-screen text callouts, matching the
+// common history/education-explainer YouTube genre (not photorealistic
+// Veo-style video). Used with the ai-image provider; scenes are animated
+// with Ken Burns pan/zoom on a still, not real motion, so duration is
+// flexible per scene rather than fixed like the Veo path.
+const explainerSceneSchema = z.object({
+  scene_index: z.number().int().min(0),
+  prompt: z.string().min(10).max(600),
+  duration_sec: z.number().min(3).max(15),
+  calloutText: z.string().min(1).max(40).nullable(),
+  calloutOffsetSec: z.number().min(0).nullable(),
+})
+
+const explainerSceneOutputSchema = z.object({
+  scenes: z.array(explainerSceneSchema).min(1).max(30),
+})
+
+export type ExplainerScene = z.infer<typeof explainerSceneSchema>
+
+export async function planExplainerScenes(params: {
+  scriptFullText: string
+  nichePrompt: string
+  totalDurationSec: number
+}): Promise<ExplainerScene[]> {
+  const totalDuration = params.totalDurationSec
+  const maxScenes = Math.min(30, Math.max(4, Math.round(totalDuration / 8)))
+
+  const systemPrompt = `You are a video director planning scenes for a flat 2D vector "doodle" explainer video — the common YouTube history/education-explainer style (think: simple round-headed stick-figure character, flat solid-color backgrounds, minimal line art, hand-drawn icon inserts). Respond with valid JSON only.`
+
+  const userPrompt = `Break this script into up to ${maxScenes} illustration scenes for a flat-vector doodle explainer video (${totalDuration}s total).
+
+Style/niche: "${params.nichePrompt}"
+
+Script:
+"""
+${params.scriptFullText.slice(0, 6000)}
+"""
+
+Return JSON:
+{
+  "scenes": [
+    {
+      "scene_index": 0,
+      "prompt": "detailed illustration prompt: flat 2D vector doodle style, minimalist line art, one consistent recurring main character, flat solid-color background, describes exactly what's in frame for this scene",
+      "duration_sec": number,
+      "calloutText": "short 2-4 word bold on-screen text for a key number/fact in this scene (e.g. '20 miles', '10,000 years ago'), or null if this scene has no standout callout",
+      "calloutOffsetSec": "seconds from the START of this scene when the callout should appear (must be less than duration_sec), or null if calloutText is null"
+    }
+  ]
+}
+
+Rules:
+- scene_index starts at 0 and increases sequentially
+- duration_sec per scene between 3 and 15, sum close to ${totalDuration} (within 10%)
+- order scenes to match the script's narrative flow
+- every prompt must explicitly describe the SAME recurring main character (consistent design) — only the scene/background/action changes
+- only give calloutText to scenes with a genuinely notable number, fact, or short punchy phrase — most scenes can be null
+- prompts must be visually concrete and specific, never vague or abstract`
+
+  const result = await generateText(userPrompt, systemPrompt, {
+    temperature: 0.6,
+    maxOutputTokens: 4096,
+    responseFormat: 'json',
+  })
+
+  const cleaned = result.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+  const data = JSON.parse(cleaned)
+  const validated = explainerSceneOutputSchema.parse(data)
+  return validated.scenes
+}

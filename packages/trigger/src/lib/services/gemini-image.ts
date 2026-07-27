@@ -18,19 +18,38 @@ export const IMAGE_MODELS = {
 // Image comes back as an inline base64 part of a normal generateContent
 // response, not a dedicated images array — uploaded to Cloudinary here to
 // get a stable hosted URL, same as every other provider in this app.
+//
+// referenceImageUrl (optional): when set, fetches that image and sends it
+// alongside the prompt as a second content part — Gemini's image models
+// support this as image-conditioned generation/editing, letting a later
+// scene say "same character, new scene: ..." and get a visually consistent
+// result instead of an independently-generated one.
 export async function generateWithGeminiImage(
   prompt: string,
   model: keyof typeof IMAGE_MODELS,
   cloudinary: typeof CloudinaryV2,
   folder: string,
-  publicId: string
+  publicId: string,
+  referenceImageUrl?: string
 ): Promise<string> {
   const { GoogleGenAI } = await import('@google/genai')
   const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY! })
 
+  let contents: string | Array<{ text?: string; inlineData?: { data: string; mimeType: string } }> = prompt
+  if (referenceImageUrl) {
+    const imgRes = await fetch(referenceImageUrl)
+    if (imgRes.ok) {
+      const buf = Buffer.from(await imgRes.arrayBuffer())
+      contents = [
+        { inlineData: { data: buf.toString('base64'), mimeType: imgRes.headers.get('content-type') ?? 'image/png' } },
+        { text: `${prompt}. Keep the exact same character design and art style as the reference image — same face, same colors, same line style — just place them in this new scene.` },
+      ]
+    }
+  }
+
   const result = await ai.models.generateContent({
     model: IMAGE_MODELS[model].id,
-    contents: prompt,
+    contents,
   })
 
   const parts = result.candidates?.[0]?.content?.parts ?? []

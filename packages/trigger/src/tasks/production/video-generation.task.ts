@@ -1,6 +1,7 @@
 import { task, logger } from '@trigger.dev/sdk'
 import { z } from 'zod'
 import type { v2 as CloudinaryV2 } from 'cloudinary'
+import { generateWithGeminiImage, IMAGE_MODELS } from '../../lib/services/gemini-image'
 
 const sceneSchema = z.object({
   scene_index: z.number().int(),
@@ -10,6 +11,10 @@ const sceneSchema = z.object({
   // Per-scene provider override from the timeline editor's Visual Type
   // selector - 'auto'/omitted falls back to the video-level provider below.
   visual_type: z.enum(['auto', 'stock', 'ai-image', 'runway', 'pika', 'veo']).optional(),
+  // Optional bold on-screen text callout (explainer style) — rendered as a
+  // timed Cloudinary text overlay by video-pipeline.task.ts, not used here.
+  callout_text: z.string().optional(),
+  callout_offset_sec: z.number().optional(),
 })
 
 const videoGenerationPayloadSchema = z.object({
@@ -62,9 +67,17 @@ export const videoGenerationTask = task({
       runway_job_id?: string
       status: 'completed' | 'failed'
       error?: string
+      callout_text?: string
+      callout_offset_sec?: number
     }> = []
 
     let totalCostUsd = 0
+    // Chains ai-image scenes into a consistent recurring character: each scene
+    // after the first passes the previous scene's own generated still as a
+    // reference, so "explainer" style videos keep the same character/art style
+    // throughout instead of a new independently-generated look every scene.
+    // A caller-supplied scene.reference_image_url always wins over this.
+    let lastAiImageStillUrl: string | undefined
 
     for (const scene of payload.scenes) {
       logger.info(`Generating scene ${scene.scene_index + 1}/${payload.scenes.length}`)
@@ -79,8 +92,12 @@ export const videoGenerationTask = task({
           videoUrl = await generateWithStockFootage(scene, cloudinary)
           // Pexels is free — cost stays 0
         } else if (effectiveProvider === 'ai-image') {
-          videoUrl = await generateWithAIImage(scene, cloudinary, payload.aspectRatio)
-          // Pollinations is free — cost stays 0
+          const referenceImageUrl = scene.reference_image_url ?? lastAiImageStillUrl
+          const result = await generateWithAIImage(scene, cloudinary, payload.aspectRatio, payload.organizationId, payload.videoId, referenceImageUrl)
+          videoUrl = result.videoUrl
+          lastAiImageStillUrl = result.stillImageUrl
+          // Pollinations (no reference) is free; Gemini image-conditioning (consistent character) costs a little
+          if (referenceImageUrl) totalCostUsd += IMAGE_MODELS['imagen-fast'].costPerImage
         } else if (effectiveProvider === 'runway') {
           videoUrl = await generateWithRunway(scene)
           totalCostUsd += estimateRunwayCost(scene.duration_sec)
@@ -118,6 +135,7 @@ export const videoGenerationTask = task({
           cloudinary_public_id: uploadResult.public_id,
           duration_sec: scene.duration_sec,
           status: 'completed',
+          ...(scene.callout_text ? { callout_text: scene.callout_text, callout_offset_sec: scene.callout_offset_sec ?? 0 } : {}),
         })
 
         logger.info(`Scene ${scene.scene_index} completed: ${uploadResult.secure_url}`)
@@ -232,22 +250,45 @@ async function generateWithStockFootage(scene: z.infer<typeof sceneSchema>, clou
 // open-world game" produces something resembling that instead of a random
 // real city photo. Animated with the same Ken Burns zoompan as the stock
 // photo fallback above.
+//
+// When referenceImageUrl is given, generates via Gemini's image-conditioned
+// generation instead (small cost) so the result keeps the same character/art
+// style as the reference — used to chain a consistent recurring character
+// across an "explainer"-style video's scenes. Returns the still image URL
+// alongside the animated clip so the caller can chain it into the next scene.
 async function generateWithAIImage(
   scene: z.infer<typeof sceneSchema>,
   cloudinary: typeof CloudinaryV2,
-  aspectRatio: '16:9' | '9:16'
-): Promise<string> {
-  const [width, height] = aspectRatio === '9:16' ? [768, 1365] : [1365, 768]
-  const encoded = encodeURIComponent(scene.prompt.slice(0, 2000))
-  const imageUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&seed=${scene.scene_index}&nologo=true&enhance=true`
+  aspectRatio: '16:9' | '9:16',
+  organizationId: string,
+  videoId: string,
+  referenceImageUrl?: string
+): Promise<{ videoUrl: string; stillImageUrl: string }> {
+  let stillImageUrl: string
+  let stillPublicId: string
 
-  const imgUpload = await cloudinary.uploader.upload(imageUrl, { resource_type: 'image' })
-  return cloudinary.url(imgUpload.public_id, {
+  if (referenceImageUrl) {
+    const folder = `tubeforge/${organizationId}/videos/${videoId}/stills`
+    const publicId = `scene_${scene.scene_index}`
+    stillImageUrl = await generateWithGeminiImage(scene.prompt, 'imagen-fast', cloudinary, folder, publicId, referenceImageUrl)
+    stillPublicId = `${folder}/${publicId}`
+  } else {
+    const [width, height] = aspectRatio === '9:16' ? [768, 1365] : [1365, 768]
+    const encoded = encodeURIComponent(scene.prompt.slice(0, 2000))
+    const imageUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${width}&height=${height}&seed=${scene.scene_index}&nologo=true&enhance=true`
+    const imgUpload = await cloudinary.uploader.upload(imageUrl, { resource_type: 'image' })
+    stillImageUrl = imgUpload.secure_url
+    stillPublicId = imgUpload.public_id
+  }
+
+  const videoUrl = cloudinary.url(stillPublicId, {
     resource_type: 'image',
     transformation: [{ effect: `zoompan:maxzoom_1.6;du_${Math.max(3, Math.round(scene.duration_sec))}` }],
     format: 'mp4',
     secure: true,
   })
+
+  return { videoUrl, stillImageUrl }
 }
 
 async function generateWithRunway(scene: z.infer<typeof sceneSchema>): Promise<string> {

@@ -25,7 +25,7 @@ export const videoPipelineTask = task({
     logger.info(`Starting video pipeline for ${payload.videoId}`)
 
     const { db } = await import('../../lib/db')
-    const { videos } = await import('../../lib/db/schema')
+    const { videos, scripts } = await import('../../lib/db/schema')
     const { eq } = await import('drizzle-orm')
     const cloudinaryModule = await import('cloudinary')
     const cloudinary = (cloudinaryModule as unknown as { v2?: typeof cloudinaryModule.v2 }).v2
@@ -45,7 +45,7 @@ export const videoPipelineTask = task({
 
     // Fetch scene data from DB
     const [video] = await db
-      .select({ scenes: videos.scenes, title: videos.title })
+      .select({ scenes: videos.scenes, title: videos.title, scriptId: videos.scriptId })
       .from(videos)
       .where(eq(videos.id, payload.videoId))
       .limit(1)
@@ -58,6 +58,8 @@ export const videoPipelineTask = task({
       cloudinary_public_id: string
       duration_sec: number
       status: string
+      callout_text?: string
+      callout_offset_sec?: number
     }>).filter((s) => s.status === 'completed' && s.cloudinary_public_id)
 
     if (scenes.length === 0) throw new Error('No completed scenes available for pipeline')
@@ -129,6 +131,62 @@ export const videoPipelineTask = task({
       }
     }
 
+    // Bold on-screen text callouts (explainer style) — timed against the FINAL
+    // concatenated timeline, so each scene's cumulative start offset (based on
+    // the original scene order/durations) plus its own callout_offset_sec
+    // gives the absolute second the callout should appear. Displayed for 3s,
+    // clamped so it never spills past its own scene's end.
+    let cumulativeOffsetSec = 0
+    for (const scene of scenes) {
+      if (scene.callout_text) {
+        const startOffset = cumulativeOffsetSec + (scene.callout_offset_sec ?? 0)
+        const endOffset = Math.min(startOffset + 3, cumulativeOffsetSec + scene.duration_sec)
+        transformations.push({
+          overlay: { font_family: 'Arial', font_size: 70, font_weight: 'bold', text: scene.callout_text },
+          color: 'white',
+          gravity: 'center',
+          start_offset: startOffset,
+          end_offset: endOffset,
+        })
+        transformations.push({ flags: 'layer_apply' })
+      }
+      cumulativeOffsetSec += scene.duration_sec
+    }
+
+    // Burned-in captions — built from the script's own sections/durations, which
+    // line up with the continuous per-section voice track (voiceAudioUrl). Not
+    // supported for the Veo per-scene-audio path (sceneAudioUrls): that timeline
+    // follows fixed 8s scene slots, not section durations, so section-based
+    // caption timing would drift out of sync — skipped there rather than shipped
+    // wrong.
+    if (payload.addCaptions && !payload.sceneAudioUrls && video.scriptId) {
+      const [script] = await db
+        .select({ sections: scripts.sections })
+        .from(scripts)
+        .where(eq(scripts.id, video.scriptId))
+        .limit(1)
+
+      const sections = (script?.sections as Array<{ content: string; duration_sec: number }> | undefined) ?? []
+      if (sections.length > 0) {
+        const srt = buildSrt(sections)
+        const folder = `tubeforge/${payload.organizationId}/videos/${payload.videoId}/captions`
+        try {
+          const srtUpload = await cloudinary.uploader.upload(`data:application/x-subrip;base64,${Buffer.from(srt).toString('base64')}`, {
+            resource_type: 'raw',
+            folder,
+            public_id: 'captions',
+            format: 'srt',
+          })
+          transformations.push({
+            overlay: `subtitles:${srtUpload.public_id.replace(/\//g, ':')}.srt`,
+            flags: 'layer_apply',
+          })
+        } catch (err) {
+          logger.info(`Caption upload/overlay skipped: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+    }
+
     // Add quality optimization
     transformations.push({ quality: 'auto', fetch_format: 'auto' })
 
@@ -183,4 +241,27 @@ function extractCloudinaryPublicId(url: string): string | null {
   // e.g. https://res.cloudinary.com/cloud/video/upload/v123/folder/file.mp3
   const match = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[^.]+)?$/)
   return match?.[1] ?? null
+}
+
+// One SRT cue per script section — coarser than word-level captions, but each
+// cue's start/end lines up exactly with that section's slice of the single
+// continuous voice track, which is the only timing data actually available.
+function buildSrt(sections: Array<{ content: string; duration_sec: number }>): string {
+  let cursorSec = 0
+  const cues = sections.map((section, i) => {
+    const start = cursorSec
+    const end = cursorSec + section.duration_sec
+    cursorSec = end
+    return `${i + 1}\n${formatSrtTimestamp(start)} --> ${formatSrtTimestamp(end)}\n${section.content.trim()}\n`
+  })
+  return cues.join('\n')
+}
+
+function formatSrtTimestamp(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = Math.floor(totalSeconds % 60)
+  const millis = Math.round((totalSeconds - Math.floor(totalSeconds)) * 1000)
+  const pad = (n: number, len = 2) => String(n).padStart(len, '0')
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)},${pad(millis, 3)}`
 }

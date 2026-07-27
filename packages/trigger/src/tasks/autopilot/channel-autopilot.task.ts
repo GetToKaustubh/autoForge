@@ -26,7 +26,7 @@ export const channelAutopilotTask = task({
       videoIdeas, scripts, voiceGenerations, thumbnails, videos, seoOptimizations, apiUsage,
     } = await import('../../lib/db/schema')
     const { eq, sql, inArray } = await import('drizzle-orm')
-    const { planVeoScenes, planStockScenes } = await import('../../lib/services/scene-planning')
+    const { planVeoScenes, planStockScenes, planExplainerScenes } = await import('../../lib/services/scene-planning')
     const { generateWithGeminiImage } = await import('../../lib/services/gemini-image')
     const cloudinaryModule = await import('cloudinary')
     const cloudinary = (cloudinaryModule as unknown as { v2?: typeof cloudinaryModule.v2 }).v2
@@ -171,7 +171,10 @@ export const channelAutopilotTask = task({
 
       // 6-7. Scene planning (+ reference images for Veo)
       await setStage('scenes')
-      type PipelineScene = { scene_index: number; prompt: string; duration_sec: number; reference_image_url?: string }
+      type PipelineScene = {
+        scene_index: number; prompt: string; duration_sec: number; reference_image_url?: string
+        callout_text?: string; callout_offset_sec?: number
+      }
       let pipelineScenes: PipelineScene[]
       // Per-scene dialogue, keyed by scene_index — only populated for the Veo path,
       // consumed by the voice + render steps below to pair scene N's own audio with
@@ -199,6 +202,24 @@ export const channelAutopilotTask = task({
             reference_image_url: refUrl,
           })
         }
+      } else if (provider === 'ai-image') {
+        // Flat 2D vector "doodle explainer" style — a single recurring character
+        // (video-generation.task.ts auto-chains scene N's image as scene N+1's
+        // reference), plus optional bold on-screen text callouts rendered at
+        // render time. No per-scene reference image generated here: leaving
+        // reference_image_url unset lets the free Pollinations-then-chain path
+        // in video-generation.task.ts kick in on its own.
+        const explainerScenes = await planExplainerScenes({
+          scriptFullText: script.fullText,
+          nichePrompt: channel.autopilotNichePrompt,
+          totalDurationSec: script.estimatedDurationSec ?? 180,
+        })
+        pipelineScenes = explainerScenes.map((s) => ({
+          scene_index: s.scene_index,
+          prompt: s.prompt,
+          duration_sec: s.duration_sec,
+          ...(s.calloutText ? { callout_text: s.calloutText, callout_offset_sec: s.calloutOffsetSec ?? 0 } : {}),
+        }))
       } else {
         const stockScenes = await planStockScenes({
           scriptFullText: script.fullText,
@@ -353,7 +374,9 @@ export const channelAutopilotTask = task({
         videoId,
         organizationId: channel.organizationId,
         ...(isVeo ? { sceneAudioUrls } : { voiceAudioUrl: voiceGen?.fullAudioUrl ?? undefined }),
-        addCaptions: false,
+        // Section-based caption timing only lines up with the continuous
+        // per-section voice track — unsupported for Veo's per-scene audio.
+        addCaptions: !isVeo,
       })
       await pollAndCheck(pipelineHandle.id, 'Video pipeline')
 
